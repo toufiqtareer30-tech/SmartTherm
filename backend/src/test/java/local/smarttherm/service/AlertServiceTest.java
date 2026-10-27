@@ -26,10 +26,10 @@ class AlertServiceTest {
                 temporaryDirectory.resolve("alerts.json").toString());
         PredictionForecast forecast = new PredictionForecast(
                 "CPU", 80.0, 92.0, Instant.now(), Instant.now().plusSeconds(300),
-                "READY", PredictionService.MODEL);
+                "READY", PredictionService.MODEL, 5, "test-model-v1");
         PredictionSnapshot prediction = new PredictionSnapshot(
                 "READY", PredictionService.MODEL, true, Instant.now(),
-                Instant.now().plusSeconds(300), List.of(forecast));
+                Instant.now().plusSeconds(300), 5, List.of(forecast));
 
         service.evaluate(prediction, AppSettings.defaults());
         service.evaluate(prediction, AppSettings.defaults());
@@ -73,9 +73,10 @@ class AlertServiceTest {
         service.evaluate(new PredictionSnapshot(
                 "MODEL_NOT_READY", "No model", false, Instant.now(),
                 Instant.now().plusSeconds(300),
+                5,
                 List.of(new PredictionForecast(
                         "CPU", 80.0, 120.0, Instant.now(), Instant.now().plusSeconds(300),
-                        "READY", PredictionService.MODEL))), AppSettings.defaults());
+                        "READY", PredictionService.MODEL, 5, "test-model-v1"))), AppSettings.defaults());
 
         assertThat(service.recent()).isEmpty();
     }
@@ -87,7 +88,7 @@ class AlertServiceTest {
                 temporaryDirectory.resolve("alerts.json").toString());
         ThermalReading current = reading(90.0, 60.0);
         PredictionSnapshot unavailable = new PredictionSnapshot(
-                "MODEL_NOT_READY", "No model", false, Instant.now(), null, List.of());
+                "MODEL_NOT_READY", "No model", false, Instant.now(), null, 5, List.of());
 
         service.evaluate(unavailable, current, AppSettings.defaults());
         service.evaluate(unavailable, current, AppSettings.defaults());
@@ -106,7 +107,7 @@ class AlertServiceTest {
                 new ObjectMapper().registerModule(new JavaTimeModule()),
                 temporaryDirectory.resolve("alerts.json").toString());
         PredictionSnapshot unavailable = new PredictionSnapshot(
-                "MODEL_NOT_READY", "No model", false, Instant.now(), null, List.of());
+                "MODEL_NOT_READY", "No model", false, Instant.now(), null, 5, List.of());
 
         service.evaluate(unavailable, reading(91.0, 60.0), AppSettings.defaults());
         service.evaluate(unavailable, reading(87.0, 60.0), AppSettings.defaults());
@@ -122,9 +123,9 @@ class AlertServiceTest {
 
     private static PredictionSnapshot prediction(double cpuC) {
         return new PredictionSnapshot("READY", PredictionService.MODEL, true,
-                Instant.now(), Instant.now().plusSeconds(300),
+                Instant.now(), Instant.now().plusSeconds(300), 5,
                 List.of(new PredictionForecast(
                         "CPU", 80.0, cpuC, Instant.now(), Instant.now().plusSeconds(300),
-                        "READY", PredictionService.MODEL)));
+                        "READY", PredictionService.MODEL, 5, "test-model-v1")));
     }
 }

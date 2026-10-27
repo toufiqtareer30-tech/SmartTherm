@@ -2,7 +2,7 @@
 
 ## Current model status
 
-The active integration serves a validated **five-minute CPU forecast**. GPU remains explicitly unconfigured; the existing ten-minute model artifacts and pipeline are preserved in `ml-integration\models\` and are not loaded or overwritten. The new schema-v2 model directory is separate at `ml-integration\models-five-minute\`. Check `GET http://127.0.0.1:8090/health` for the loaded model name, version, horizon, validation status, and training state. No untrained trend estimate is substituted.
+The active integration serves a validated **five-minute CPU forecast**. GPU remains explicitly unconfigured. Existing ten-minute artifacts remain in `ml-integration\models\`, and the original ten-minute pipeline source remains retrievable from the initial Git snapshot (`a7c9b3f`); neither is active in the new service. The new schema-v2 model directory is separate at `ml-integration\models-five-minute\`. Check `GET http://127.0.0.1:8090/health` for the loaded model name, version, horizon, validation status, and training state. No untrained trend estimate is substituted.
 
 ## Collect real training data
 

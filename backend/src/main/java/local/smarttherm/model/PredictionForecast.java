@@ -9,5 +9,7 @@ public record PredictionForecast(
         Instant generatedAt,
         Instant targetTime,
         String status,
-        String model) {
+        String model,
+        Integer horizonMinutes,
+        String modelVersion) {
 }

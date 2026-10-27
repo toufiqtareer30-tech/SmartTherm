@@ -137,8 +137,8 @@ public class AlertService {
                     forecast.predictedC(),
                     threshold,
                     severity,
-                    String.format("%s temperature is predicted to reach %.1f°C within approximately 5 minutes.",
-                            name, forecast.predictedC()),
+                    String.format("%s temperature is predicted to reach %.1f°C within approximately %d minutes.",
+                            name, forecast.predictedC(), PredictionService.HORIZON_MINUTES),
                     "Reduce demanding workloads and check that the computer's vents are unobstructed.",
                     true);
             addAlert(alert);

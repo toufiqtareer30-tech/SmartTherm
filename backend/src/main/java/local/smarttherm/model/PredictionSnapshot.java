@@ -9,5 +9,6 @@ public record PredictionSnapshot(
         boolean trainedModel,
         Instant generatedAt,
         Instant targetTime,
+        Integer horizonMinutes,
         List<PredictionForecast> forecasts) {
 }

@@ -75,8 +75,10 @@ class PredictionServiceTest {
                 true,
                 now,
                 now.plusSeconds(300),
+                5,
                 List.of(new local.smarttherm.model.PredictionForecast(
-                        "CPU", 64.0, 70.0, now, now.plusSeconds(300), "READY", "XGBoost")));
+                        "CPU", 64.0, 70.0, now, now.plusSeconds(300),
+                        "READY", "XGBoost", 5, "test-model-v1")));
         PythonPredictionClient client = mock(PythonPredictionClient.class);
         when(client.predict(anyList())).thenReturn(
                 new PythonPredictionClient.InferenceResult(Optional.of(trained), ""));
@@ -86,6 +88,7 @@ class PredictionServiceTest {
 
         assertThat(result.trainedModel()).isTrue();
         assertThat(result.model()).contains("XGBoost");
+        assertThat(result.horizonMinutes()).isEqualTo(5);
         assertThat(result.forecasts().getFirst().predictedC()).isEqualTo(70.0);
     }
 

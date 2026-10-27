@@ -36,11 +36,12 @@ class PythonPredictionClientTest {
                           "status":"READY",
                           "model":"Python trained models: XGBoost",
                           "trainedModel":true,
+                          "horizonMinutes":5,
                           "generatedAt":"%s",
                           "targetTime":"%s",
                           "forecasts":[
-                            {"component":"CPU","currentC":61.0,"predictedC":65.0,"generatedAt":"%s","targetTime":"%s","status":"READY","model":"XGBoost"},
-                            {"component":"GPU","currentC":null,"predictedC":null,"generatedAt":"%s","targetTime":"%s","status":"MODEL_UNAVAILABLE","model":"No validated trained model is available."}
+                            {"component":"CPU","currentC":61.0,"predictedC":65.0,"generatedAt":"%s","targetTime":"%s","status":"READY","model":"XGBoost","horizonMinutes":5,"modelVersion":"xgboost-v1"},
+                            {"component":"GPU","currentC":null,"predictedC":null,"generatedAt":"%s","targetTime":"%s","status":"MODEL_UNAVAILABLE","model":"No validated trained model is available.","horizonMinutes":5}
                           ]
                         }
                         """.formatted(
@@ -56,7 +57,11 @@ class PythonPredictionClientTest {
 
         assertThat(result.prediction()).isPresent();
         assertThat(result.prediction().orElseThrow().trainedModel()).isTrue();
+        assertThat(result.prediction().orElseThrow().horizonMinutes()).isEqualTo(5);
         assertThat(result.prediction().orElseThrow().forecasts()).hasSize(2);
+        assertThat(result.prediction().orElseThrow().forecasts().getFirst().horizonMinutes()).isEqualTo(5);
+        assertThat(result.prediction().orElseThrow().forecasts().getFirst().modelVersion())
+                .isEqualTo("xgboost-v1");
         server.verify();
     }
 
@@ -75,11 +80,12 @@ class PythonPredictionClientTest {
                           "status":"READY",
                           "model":"Python trained models: XGBoost",
                           "trainedModel":true,
+                          "horizonMinutes":5,
                           "generatedAt":"%s",
                           "targetTime":"%s",
                           "forecasts":[
-                            {"component":"CPU","currentC":61.0,"predictedC":65.0,"generatedAt":"%s","targetTime":"%s","status":"READY","model":"XGBoost"},
-                            {"component":"GPU","currentC":null,"predictedC":null,"generatedAt":"%s","targetTime":"%s","status":"MODEL_UNAVAILABLE","model":"No validated trained model is available."}
+                            {"component":"CPU","currentC":61.0,"predictedC":65.0,"generatedAt":"%s","targetTime":"%s","status":"READY","model":"XGBoost","horizonMinutes":5,"modelVersion":"xgboost-v1"},
+                            {"component":"GPU","currentC":null,"predictedC":null,"generatedAt":"%s","targetTime":"%s","status":"MODEL_UNAVAILABLE","model":"No validated trained model is available.","horizonMinutes":5}
                           ]
                         }
                         """.formatted(
@@ -110,11 +116,12 @@ class PythonPredictionClientTest {
                           "status":"READY",
                           "model":"Python trained models: XGBoost",
                           "trainedModel":true,
+                          "horizonMinutes":5,
                           "generatedAt":"%s",
                           "targetTime":"%s",
                           "forecasts":[
-                            {"component":"CPU","currentC":70.0,"predictedC":75.0,"generatedAt":"%s","targetTime":"%s","status":"READY","model":"XGBoost"},
-                            {"component":"GPU","currentC":null,"predictedC":null,"generatedAt":"%s","targetTime":"%s","status":"MODEL_UNAVAILABLE","model":"No model"}
+                            {"component":"CPU","currentC":70.0,"predictedC":75.0,"generatedAt":"%s","targetTime":"%s","status":"READY","model":"XGBoost","horizonMinutes":5,"modelVersion":"xgboost-v1"},
+                            {"component":"GPU","currentC":null,"predictedC":null,"generatedAt":"%s","targetTime":"%s","status":"MODEL_UNAVAILABLE","model":"No model","horizonMinutes":5}
                           ]
                         }
                         """.formatted(
@@ -130,6 +137,43 @@ class PythonPredictionClientTest {
 
         assertThat(result.prediction()).isEmpty();
         assertThat(result.reason()).contains("did not return a valid");
+        server.verify();
+    }
+
+    @Test
+    void preservesTheInferenceServiceReasonWhenNoModelIsAvailable() {
+        Instant generatedAt = Instant.now();
+        Instant targetTime = generatedAt.plusSeconds(300);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient restClient = builder.baseUrl("http://127.0.0.1:8090").build();
+        server.expect(requestTo("http://127.0.0.1:8090/predict"))
+                .andRespond(withSuccess("""
+                        {
+                          "status":"MODEL_UNAVAILABLE",
+                          "model":"Python trained models unavailable",
+                          "trainedModel":false,
+                          "horizonMinutes":5,
+                          "generatedAt":"%s",
+                          "targetTime":"%s",
+                          "forecasts":[
+                            {"component":"CPU","currentC":61.0,"predictedC":null,"generatedAt":"%s","targetTime":"%s","status":"MODEL_UNAVAILABLE","model":"model manifest is missing","horizonMinutes":5},
+                            {"component":"GPU","currentC":null,"predictedC":null,"generatedAt":"%s","targetTime":"%s","status":"MODEL_UNAVAILABLE","model":"model manifest is missing","horizonMinutes":5}
+                          ]
+                        }
+                        """.formatted(
+                        generatedAt,
+                        targetTime,
+                        generatedAt,
+                        targetTime,
+                        generatedAt,
+                        targetTime), MediaType.APPLICATION_JSON));
+
+        var result = new PythonPredictionClient(restClient, true)
+                .predict(List.of(reading(generatedAt, 61.0)));
+
+        assertThat(result.prediction()).isEmpty();
+        assertThat(result.reason()).contains("model manifest is missing");
         server.verify();
     }
 

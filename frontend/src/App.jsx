@@ -91,6 +91,26 @@ function formatTime(value) {
     : parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function forecastHorizonMinutes(prediction, forecast) {
+  const minutes = Number(forecast?.horizonMinutes ?? prediction?.horizonMinutes);
+  return Number.isInteger(minutes) && minutes > 0 ? minutes : null;
+}
+
+function forecastTargetTimeMs(prediction, forecast) {
+  return new Date(forecast?.targetTime || prediction?.targetTime).getTime();
+}
+
+function forecastIsUsable(prediction, forecast, now = Date.now()) {
+  if (forecast?.status !== "READY" || forecast.predictedC == null ||
+      !Number.isFinite(Number(forecast.predictedC)) ||
+      !forecast.model || !forecast.modelVersion) return false;
+  const horizon = forecastHorizonMinutes(prediction, forecast);
+  const generatedAt = new Date(forecast.generatedAt || prediction?.generatedAt).getTime();
+  const targetAt = forecastTargetTimeMs(prediction, forecast);
+  return horizon != null && Number.isFinite(generatedAt) && Number.isFinite(targetAt) &&
+    targetAt > now && Math.abs(targetAt - generatedAt - horizon * 60_000) <= 30_000;
+}
+
 function statusFor(value, limit) {
   if (value == null || !Number.isFinite(Number(value))) return "unavailable";
   if (Number(value) >= limit + 5) return "critical";
@@ -100,7 +120,9 @@ function statusFor(value, limit) {
 
 function forecastStateLabel(prediction, forecast) {
   if (!prediction) return "Loading forecast";
-  if (forecast?.status === "READY" && forecast.predictedC != null) return "Ready";
+  if (forecast?.status === "READY") {
+    return forecastIsUsable(prediction, forecast) ? "Ready" : "Unavailable";
+  }
   if (["WAITING_FOR_DATA", "STALE_DATA", "INSUFFICIENT_HISTORY"].includes(forecast?.status || prediction.status)) {
     return "Warming up";
   }
@@ -109,8 +131,21 @@ function forecastStateLabel(prediction, forecast) {
 
 function forecastReason(prediction, forecast) {
   if (!prediction) return "Loading the local trained-model forecast.";
-  if (forecast?.status === "READY" && forecast.predictedC != null) {
+  if (forecast?.status === "READY" && forecastIsUsable(prediction, forecast)) {
     return `${forecast.model || prediction.model || "Trained model"} forecast ready.`;
+  }
+  if (forecast?.status === "READY" && forecastHorizonMinutes(prediction, forecast) == null) {
+    return "Forecast horizon unavailable; waiting for a compatible model response.";
+  }
+  if (forecast?.status === "READY" && !forecast.modelVersion) {
+    return "Model version unavailable; waiting for a compatible model response.";
+  }
+  if (forecast?.status === "READY" &&
+      forecastTargetTimeMs(prediction, forecast) <= Date.now()) {
+    return "Forecast expired; waiting for a fresh model result.";
+  }
+  if (forecast?.status === "READY") {
+    return "Forecast target does not match the reported horizon.";
   }
   if (forecast?.model) return forecast.model;
   if (prediction.status === "WAITING_FOR_DATA") return "Waiting for sensor data.";
@@ -198,8 +233,14 @@ function App() {
   const running = calibrationRunning(calibration);
   const cpuForecast = prediction?.forecasts?.find((item) => item.component === "CPU");
   const gpuForecast = prediction?.forecasts?.find((item) => item.component === "GPU");
-  const cpuModelReady = cpuForecast?.status === "READY" && cpuForecast.predictedC != null;
-  const gpuModelReady = gpuForecast?.status === "READY" && gpuForecast.predictedC != null;
+  const cpuModelReady = forecastIsUsable(prediction, cpuForecast, clock);
+  const gpuModelReady = forecastIsUsable(prediction, gpuForecast, clock);
+  const forecastMinutes = forecastHorizonMinutes(prediction, cpuForecast);
+  const forecastHorizonText = forecastMinutes == null ? "Forecast horizon unavailable" : `${forecastMinutes} min`;
+  const outlookTitle = forecastMinutes == null ? "Thermal outlook" : `${forecastMinutes}-minute thermal outlook`;
+  const historyOutlookTitle = forecastMinutes == null
+    ? "Predictive outlook"
+    : `Predictive outlook - in ${forecastMinutes} minutes`;
   const cpuWarningLimit = Number(settings?.cpuWarningC ?? DEFAULT_CPU_LIMIT);
   const gpuWarningLimit = Number(settings?.gpuWarningC ?? DEFAULT_GPU_LIMIT);
   const calibratedCpuLimit = calibration?.calibrationThrottleCpuTempC ??
@@ -282,6 +323,8 @@ function App() {
       prediction?.generatedAt || "",
       effectiveCpuLimit,
       effectiveGpuLimit,
+      cpuModelReady,
+      gpuModelReady,
       running,
       cooldownActive,
     ].join(":");
@@ -297,9 +340,7 @@ function App() {
     let changed = false;
     const createdWarnings = [];
     for (const evaluation of evaluations) {
-      const forecastReady = evaluation.forecast?.status === "READY" &&
-        evaluation.forecast.predictedC != null &&
-        Number.isFinite(Number(evaluation.forecast.predictedC));
+      const forecastReady = forecastIsUsable(prediction, evaluation.forecast);
       const currentValid = current?.sourceAvailable === true &&
         evaluation.currentC != null &&
         Number.isFinite(Number(evaluation.currentC));
@@ -373,12 +414,15 @@ function App() {
     gpuForecast,
     prediction?.generatedAt,
     prediction?.targetTime,
+    prediction?.horizonMinutes,
     settings,
     effectiveCpuLimit,
     effectiveGpuLimit,
     running,
     cooldownActive,
     warningsSuppressed,
+    cpuModelReady,
+    gpuModelReady,
   ]);
 
   useEffect(() => {
@@ -557,7 +601,7 @@ function App() {
   })).filter((reading) => Number.isFinite(reading.timestamp)), [history]);
   const range = HISTORY_RANGES.find((item) => item.id === historyRange) || HISTORY_RANGES[0];
   const outlookChartData = allChartData.filter((point) => point.timestamp >= clock - range.durationMs);
-  const forecastTargetMs = new Date(cpuForecast?.targetTime || prediction?.targetTime).getTime();
+  const forecastTargetMs = forecastTargetTimeMs(prediction, cpuForecast);
   const forecastTemperature = Number(cpuForecast?.predictedC);
   const latestHistoryCpu = outlookChartData.reduce((latest, point) =>
     Number.isFinite(Number(point.cpu)) && (!latest || point.timestamp > latest.timestamp)
@@ -573,12 +617,13 @@ function App() {
     forecastTargetMs > clock &&
     Number.isFinite(latestActualPoint?.timestamp) &&
     Number.isFinite(Number(latestActualPoint?.cpu));
-  const forecastModel = cpuForecast?.model || prediction?.model || "Trained model";
+  const forecastModel = cpuForecast?.model || "Trained model unavailable";
+  const forecastModelVersion = cpuForecast?.modelVersion || "Model version unavailable";
   const forecastTargetLabel = Number.isFinite(forecastTargetMs)
     ? new Date(forecastTargetMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "time unavailable";
   const forecastPointLabel = `${formatTemp(forecastTemperature)} at ${forecastTargetLabel}`;
-  const forecastAccessibleLabel = `Forecast, ${forecastPointLabel}, model ${forecastModel}`;
+  const forecastAccessibleLabel = `Forecast, ${forecastPointLabel}, within ${forecastHorizonText}, model ${forecastModel}, version ${forecastModelVersion}`;
   const forecastPointColor = Number.isFinite(forecastTemperature) && forecastTemperature >= effectiveCpuLimit
     ? statusFor(forecastTemperature, effectiveCpuLimit) === "critical" ? "var(--danger)" : "var(--warm)"
     : "var(--warm)";
@@ -791,7 +836,7 @@ function App() {
             {previewWarnings && <section className="preview-banner" role="status">
               <AlertTriangle size={17} />
               <div><b>Warning preview — sample values only</b>
-                <span>CPU predicted to reach {formatTemp(effectiveCpuLimit + 1)} by {formatTime(prediction?.targetTime)}, at or above the throttle limit of {effectiveCpuLimit}°C.</span>
+                <span>CPU predicted to reach {formatTemp(effectiveCpuLimit + 1)} within {forecastHorizonText} (by {formatTime(cpuForecast?.targetTime || prediction?.targetTime)}), at or above the throttle limit of {effectiveCpuLimit}°C.</span>
               </div>
               <button className="icon-button" aria-label="Close warning preview" onClick={() => setPreviewWarnings(false)}>×</button>
             </section>}
@@ -825,7 +870,7 @@ function App() {
                   <div className="gauge-readings">
                     <div className="gauge-reading"><span><i className="dot cpu-dot" />CPU temperature</span><b>{formatTemp(currentCpu)}</b></div>
                     <div className="gauge-reading"><span><i className={`dot ${running ? "cpu-dot" : "gpu-dot"}`} />GPU temperature</span><b className={running ? "forecast-temp" : "gpu-text"}>{formatTemp(currentGpu)}</b></div>
-                    <div className="gauge-reading"><span><i className="dot forecast-dot" />CPU forecast · 10 min</span><b className={running ? "neutral-temp" : "forecast-temp"}>{cpuModelReady ? formatTemp(cpuForecast.predictedC) : "Unavailable"}</b></div>
+                    <div className="gauge-reading"><span><i className="dot forecast-dot" />CPU forecast · {forecastHorizonText}</span><b className={running ? "neutral-temp" : "forecast-temp"}>{cpuModelReady ? formatTemp(cpuForecast.predictedC) : "Unavailable"}</b></div>
                     {!cpuModelReady && <small className="forecast-detail">{forecastReason(prediction, cpuForecast)}</small>}
                     <div className="gauge-limits">
                       <span>CPU limit <b>{effectiveCpuLimit.toFixed(1)}°C</b>{showCalibratedTag && <em>Calibrated</em>}</span>
@@ -840,7 +885,7 @@ function App() {
 
               <section className={`panel outlook-card ${previewWarnings ? "warning" : warningsSuppressed ? "calibrating" : cpuPredictionState}`}>
                 <div className="panel-heading">
-                  <div><h2>10-minute thermal outlook</h2><p>{prediction?.model || "Forecast model"}</p></div>
+                  <div><h2>{outlookTitle}</h2><p>{cpuModelReady ? `${cpuForecast.model} · ${cpuForecast.modelVersion}` : prediction?.model || "Forecast model unavailable"}</p></div>
                   <div className="outlook-controls">
                     <span className="history-range">{forecastStateLabel(prediction, cpuForecast)}</span>
                     <div className="segmented-control" role="group" aria-label="Outlook history range">
@@ -894,7 +939,7 @@ function App() {
                   </ResponsiveContainer>
                   {cpuForecastDrawable && forecastPointFocused && <div className="forecast-point-tooltip" role="tooltip">
                     <b>Forecast · {forecastTargetLabel}</b>
-                    <span>{formatTemp(forecastTemperature)} · {forecastModel}</span>
+                    <span>{formatTemp(forecastTemperature)} · {forecastModel} · {forecastModelVersion}</span>
                   </div>}
                 </div> : <div className="chart-empty">
                   <Radio size={18} /><span>{cpuModelReady ? "Sensor history unavailable" : "Forecast unavailable"}</span>
@@ -1008,17 +1053,18 @@ function App() {
             </section>
             <div className="history-bottom-grid">
               <section className="panel">
-                <div className="panel-heading"><div><h2>Predictive outlook - in 10 minutes</h2><p>Latest current and predicted temperatures</p></div></div>
+                <div className="panel-heading"><div><h2>{historyOutlookTitle}</h2><p>Latest current and predicted temperatures</p></div></div>
                 <div className="history-forecast-row"><span>CPU</span><b>{formatTemp(cpuForecast?.currentC)}</b><i>→</i><b>{cpuModelReady ? formatTemp(cpuForecast.predictedC) : "Unavailable"}</b></div>
                 <div className="history-forecast-row"><span>GPU</span><b>{formatTemp(gpuForecast?.currentC)}</b><i>→</i><b>{gpuModelReady ? formatTemp(gpuForecast.predictedC) : "Unavailable"}</b></div>
                 {!cpuModelReady && <p className="forecast-detail">CPU: {forecastReason(prediction, cpuForecast)}</p>}
                 {!gpuModelReady && <p className="forecast-detail">GPU: {forecastReason(prediction, gpuForecast)}</p>}
               </section>
               <section className="panel model-card">
-                <div className="panel-heading"><div><h2>Model</h2><p>{prediction?.model || "Model unavailable"}</p></div></div>
+                <div className="panel-heading"><div><h2>Model</h2><p>{cpuModelReady ? `${cpuForecast.model} · ${cpuForecast.modelVersion}` : prediction?.model || "Model unavailable"}</p></div></div>
                 {(cpuModelReady || gpuModelReady) && <>
-                  <div className="target-time"><span>Prediction generated</span><b>{formatTime(prediction?.generatedAt)}</b></div>
-                  <div className="target-time"><span>Forecast target</span><b>{formatTime(prediction?.targetTime)}</b></div>
+                  <div className="target-time"><span>Forecast horizon</span><b>{forecastMinutes} minutes</b></div>
+                  <div className="target-time"><span>Prediction generated</span><b>{formatTime(cpuForecast?.generatedAt || prediction?.generatedAt)}</b></div>
+                  <div className="target-time"><span>Forecast target</span><b>{formatTime(cpuForecast?.targetTime || prediction?.targetTime)}</b></div>
                 </>}
                 <div className="model-state">
                   CPU {forecastStateLabel(prediction, cpuForecast).toLowerCase()} · GPU {forecastStateLabel(prediction, gpuForecast).toLowerCase()}

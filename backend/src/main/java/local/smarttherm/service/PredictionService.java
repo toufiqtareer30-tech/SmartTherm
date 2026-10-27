@@ -13,7 +13,8 @@ import java.util.Optional;
 @Service
 public class PredictionService {
     public static final String MODEL = "Validated trained model prediction";
-    private static final Duration HORIZON = Duration.ofMinutes(5);
+    public static final int HORIZON_MINUTES = 5;
+    private static final Duration HORIZON = Duration.ofMinutes(HORIZON_MINUTES);
     private static final Duration MAX_AGE = Duration.ofSeconds(15);
     private final PythonPredictionClient pythonPredictionClient;
     private volatile PredictionSnapshot latest = waitingForData();
@@ -36,7 +37,8 @@ public class PredictionService {
         if (!newest.sourceAvailable()
                 || Duration.between(newest.timestamp(), generatedAt).abs().compareTo(MAX_AGE) > 0) {
             latest = new PredictionSnapshot(
-                    "STALE_DATA", "Waiting for fresh sensor data", false, generatedAt, null, List.of());
+                    "STALE_DATA", "Waiting for fresh sensor data", false,
+                    generatedAt, null, HORIZON_MINUTES, List.of());
             return latest;
         }
 
@@ -53,7 +55,8 @@ public class PredictionService {
 
     public synchronized void markStale() {
         latest = new PredictionSnapshot(
-                "STALE_DATA", "Waiting for fresh sensor data", false, Instant.now(), null, List.of());
+                "STALE_DATA", "Waiting for fresh sensor data", false,
+                Instant.now(), null, HORIZON_MINUTES, List.of());
     }
 
     private static PredictionSnapshot modelNotReady(
@@ -72,7 +75,8 @@ public class PredictionService {
         List<PredictionForecast> forecasts = List.of(
                 unavailableForecast("CPU", newest.cpuTemperatureC(), generatedAt, target, forecastStatus, model),
                 unavailableForecast("GPU", newest.gpuTemperatureC(), generatedAt, target, forecastStatus, model));
-        return new PredictionSnapshot(status, model, false, generatedAt, target, forecasts);
+        return new PredictionSnapshot(
+                status, model, false, generatedAt, target, HORIZON_MINUTES, forecasts);
     }
 
     private static PredictionForecast unavailableForecast(
@@ -82,11 +86,14 @@ public class PredictionService {
             Instant target,
             String status,
             String model) {
-        return new PredictionForecast(component, current, null, generatedAt, target, status, model);
+        return new PredictionForecast(
+                component, current, null, generatedAt, target, status, model,
+                HORIZON_MINUTES, null);
     }
 
     private static PredictionSnapshot waitingForData() {
         return new PredictionSnapshot(
-                "WAITING_FOR_DATA", "Waiting for sensor data", false, null, null, List.of());
+                "WAITING_FOR_DATA", "Waiting for sensor data", false,
+                null, null, HORIZON_MINUTES, List.of());
     }
 }

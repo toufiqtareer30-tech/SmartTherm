@@ -20,9 +20,9 @@ import java.util.Optional;
 @Service
 public class PythonPredictionClient {
     private static final Logger logger = LoggerFactory.getLogger(PythonPredictionClient.class);
-    private static final Duration LOOKBACK = Duration.ofMinutes(5);
+    private static final Duration LOOKBACK = Duration.ofMinutes(PredictionService.HORIZON_MINUTES);
     private static final int MAX_READINGS = 150;
-    private static final Duration TARGET_HORIZON = Duration.ofMinutes(5);
+    private static final Duration TARGET_HORIZON = Duration.ofMinutes(PredictionService.HORIZON_MINUTES);
     private static final Duration TARGET_TOLERANCE = Duration.ofSeconds(30);
     private static final Duration ERROR_LOG_INTERVAL = Duration.ofMinutes(1);
     private static final int MAX_ATTEMPTS = 3;
@@ -64,13 +64,7 @@ public class PythonPredictionClient {
                         .retrieve()
                         .body(PredictionSnapshot.class);
                 if (!validTrainedResponse(response, requestReadings.getLast())) {
-                    String reason = response == null
-                            ? "Python inference returned an empty response."
-                            : response.status().equals("MODEL_UNAVAILABLE")
-                            ? "No validated trained model is installed."
-                            : response.status().equals("INSUFFICIENT_HISTORY")
-                            ? "The trained model is ready, but recent sensor history is insufficient."
-                            : "Python inference did not return a valid trained-model prediction.";
+                    String reason = invalidResponseReason(response);
                     logIssue(reason, null);
                     return new InferenceResult(Optional.empty(), reason);
                 }
@@ -128,6 +122,7 @@ public class PythonPredictionClient {
                 || !"READY".equals(response.status())
                 || response.model() == null || response.model().isBlank()
                 || response.generatedAt() == null || response.targetTime() == null
+                || !Integer.valueOf(PredictionService.HORIZON_MINUTES).equals(response.horizonMinutes())
                 || response.forecasts() == null) {
             return false;
         }
@@ -149,6 +144,7 @@ public class PythonPredictionClient {
             if (forecast == null
                     || forecast.generatedAt() == null
                     || forecast.targetTime() == null
+                    || !Integer.valueOf(PredictionService.HORIZON_MINUTES).equals(forecast.horizonMinutes())
                     || Duration.between(response.generatedAt(), forecast.generatedAt()).abs()
                         .compareTo(TARGET_TOLERANCE) > 0
                     || Duration.between(response.targetTime(), forecast.targetTime()).abs()
@@ -178,11 +174,34 @@ public class PythonPredictionClient {
         return cpu && gpu && ready;
     }
 
+    private static String invalidResponseReason(PredictionSnapshot response) {
+        if (response == null) {
+            return "Python inference returned an empty response.";
+        }
+        if (response.status() != null
+                && List.of("MODEL_UNAVAILABLE", "INSUFFICIENT_HISTORY", "STALE_DATA")
+                        .contains(response.status())
+                && response.forecasts() != null) {
+            String componentReason = response.forecasts().stream()
+                    .filter(forecast -> forecast != null && "CPU".equals(forecast.component()))
+                    .map(PredictionForecast::model)
+                    .filter(reason -> reason != null && !reason.isBlank())
+                    .findFirst()
+                    .orElse(null);
+            if (componentReason != null) {
+                return componentReason;
+            }
+        }
+        return "Python inference did not return a valid trained-model prediction.";
+    }
+
     private static boolean validForecast(PredictionForecast forecast) {
         return forecast != null
                 && ("CPU".equals(forecast.component()) || "GPU".equals(forecast.component()))
                 && "READY".equals(forecast.status())
                 && forecast.model() != null && !forecast.model().isBlank()
+                && forecast.modelVersion() != null && !forecast.modelVersion().isBlank()
+                && Integer.valueOf(PredictionService.HORIZON_MINUTES).equals(forecast.horizonMinutes())
                 && forecast.currentC() != null
                 && Double.isFinite(forecast.currentC())
                 && forecast.currentC() >= 0 && forecast.currentC() <= 150
