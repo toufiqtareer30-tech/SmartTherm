@@ -25,11 +25,11 @@ class AlertServiceTest {
                 new ObjectMapper().registerModule(new JavaTimeModule()),
                 temporaryDirectory.resolve("alerts.json").toString());
         PredictionForecast forecast = new PredictionForecast(
-                "CPU", 80.0, 92.0, Instant.now(), Instant.now().plusSeconds(600),
+                "CPU", 80.0, 92.0, Instant.now(), Instant.now().plusSeconds(300),
                 "READY", PredictionService.MODEL);
         PredictionSnapshot prediction = new PredictionSnapshot(
                 "READY", PredictionService.MODEL, true, Instant.now(),
-                Instant.now().plusSeconds(600), List.of(forecast));
+                Instant.now().plusSeconds(300), List.of(forecast));
 
         service.evaluate(prediction, AppSettings.defaults());
         service.evaluate(prediction, AppSettings.defaults());
@@ -72,9 +72,9 @@ class AlertServiceTest {
 
         service.evaluate(new PredictionSnapshot(
                 "MODEL_NOT_READY", "No model", false, Instant.now(),
-                Instant.now().plusSeconds(600),
+                Instant.now().plusSeconds(300),
                 List.of(new PredictionForecast(
-                        "CPU", 80.0, 120.0, Instant.now(), Instant.now().plusSeconds(600),
+                        "CPU", 80.0, 120.0, Instant.now(), Instant.now().plusSeconds(300),
                         "READY", PredictionService.MODEL))), AppSettings.defaults());
 
         assertThat(service.recent()).isEmpty();
@@ -122,9 +122,9 @@ class AlertServiceTest {
 
     private static PredictionSnapshot prediction(double cpuC) {
         return new PredictionSnapshot("READY", PredictionService.MODEL, true,
-                Instant.now(), Instant.now().plusSeconds(600),
+                Instant.now(), Instant.now().plusSeconds(300),
                 List.of(new PredictionForecast(
-                        "CPU", 80.0, cpuC, Instant.now(), Instant.now().plusSeconds(600),
+                        "CPU", 80.0, cpuC, Instant.now(), Instant.now().plusSeconds(300),
                         "READY", PredictionService.MODEL)));
     }
 }

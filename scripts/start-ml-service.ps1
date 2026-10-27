@@ -25,10 +25,23 @@ if ($LASTEXITCODE -ne 0) {
     throw "Could not install SmartTherm ML dependencies."
 }
 
-$env:SMARTTHERM_MODEL_DIR = Join-Path $mlRoot "models"
+$modelDirectory = $env:SMARTTHERM_MODEL_DIR
+if ([string]::IsNullOrWhiteSpace($modelDirectory)) {
+    $modelDirectory = Join-Path $mlRoot "models-five-minute"
+}
+$env:SMARTTHERM_MODEL_DIR = $modelDirectory
+
+$mlBaseUrl = $env:SMARTTHERM_ML_URL
+if ([string]::IsNullOrWhiteSpace($mlBaseUrl)) {
+    $mlBaseUrl = "http://127.0.0.1:8090"
+}
+$mlUri = [Uri]$mlBaseUrl
+$mlHost = $mlUri.Host
+$mlPort = $mlUri.Port
+
 Push-Location $mlRoot
 try {
-    & $python -m uvicorn smarttherm_ml.service:app --app-dir $mlRoot --host 127.0.0.1 --port 8090
+    & $python -m uvicorn smarttherm_ml.service:app --app-dir $mlRoot --host $mlHost --port $mlPort
     if ($LASTEXITCODE -ne 0) {
         throw "SmartTherm Python inference service exited with code $LASTEXITCODE."
     }

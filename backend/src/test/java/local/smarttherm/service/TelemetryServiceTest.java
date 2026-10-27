@@ -68,7 +68,7 @@ class TelemetryServiceTest {
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         Path history = temporaryDirectory.resolve("reading-history.jsonl");
         ThermalReading expired = reading(Instant.now().minusSeconds(900));
-        ThermalReading recent = reading(Instant.now().minusSeconds(590));
+        ThermalReading recent = reading(Instant.now().minusSeconds(290));
         mapper.writeValue(history.toFile(), expired);
         Files.writeString(history, System.lineSeparator() + mapper.writeValueAsString(recent)
                 + System.lineSeparator(), java.nio.file.StandardOpenOption.APPEND);

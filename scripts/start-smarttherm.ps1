@@ -132,7 +132,12 @@ if ([int]$Matches[1] -lt 3 -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -lt
 }
 
 $maven = Get-MavenExecutable
-foreach ($port in @(8080, 8090, 5173)) {
+$mlBaseUrl = $env:SMARTTHERM_ML_URL
+if ([string]::IsNullOrWhiteSpace($mlBaseUrl)) {
+    $mlBaseUrl = "http://127.0.0.1:8090"
+}
+$mlUri = [Uri]$mlBaseUrl
+foreach ($port in @(8080, $mlUri.Port, 5173) | Select-Object -Unique) {
     Assert-PortAvailable $port
 }
 
@@ -155,7 +160,7 @@ $mlScript = Join-Path $PSScriptRoot "start-ml-service.ps1"
 Start-Process -FilePath "powershell.exe" -WorkingDirectory $projectRoot -ArgumentList @(
     "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ('"{0}"' -f $mlScript)
 )
-Wait-ForEndpoint "Python inference service" "http://127.0.0.1:8090/health" 180
+Wait-ForEndpoint "Python inference service" "$($mlBaseUrl.TrimEnd('/'))/health" 180
 
 Start-Process -FilePath "powershell.exe" -WorkingDirectory $projectRoot -ArgumentList @("-NoExit", "-NoProfile", "-Command", $backendCommand)
 Wait-ForEndpoint "Backend API" "http://127.0.0.1:8080/api/health" 90

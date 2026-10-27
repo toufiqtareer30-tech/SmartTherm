@@ -17,6 +17,7 @@ import numpy as np
 import sklearn
 import xgboost
 from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.base import clone
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from xgboost import XGBRegressor
@@ -34,10 +35,25 @@ logger = logging.getLogger("smarttherm.ml.training")
 MIN_TRAINING_EXAMPLES = 300
 MIN_EVALUATION_EXAMPLES = 50
 TIME_BLOCK_SECONDS = 60 * 60
+MODEL_SCHEMA_VERSION = 2
 
 
 class InsufficientTrainingDataError(ValueError):
     pass
+
+
+class _PersistenceResidualPipeline:
+    def __init__(self, residual_model: Pipeline, correction_weight: float) -> None:
+        self.residual_model = residual_model
+        self.correction_weight = correction_weight
+
+    def predict(self, features: np.ndarray) -> np.ndarray:
+        values = np.asarray(features, dtype=float)
+        if values.ndim != 2 or values.shape[1] != len(FEATURE_NAMES):
+            raise ValueError("features do not match the active model contract")
+        current_temperature_index = FEATURE_NAMES.index("temperature_current_c")
+        current_temperature = values[:, current_temperature_index]
+        return current_temperature + self.correction_weight * self.residual_model.predict(values)
 
 
 def assess_examples(points: list[Any]) -> dict[str, Any]:
@@ -149,7 +165,7 @@ def split_chronologically(
         or len(test) < minimum_evaluation
     ):
         raise InsufficientTrainingDataError(
-            "After chronological splitting and the ten-minute target embargo, "
+            "After chronological splitting and the five-minute target embargo, "
             f"found train={len(train)}, validation={len(validation)}, test={len(test)}; "
             f"require at least {minimum_train}, {minimum_evaluation}, and {minimum_evaluation}."
         )
@@ -174,55 +190,107 @@ def train_component(
     x_test = _features_matrix(test)
     y_test = np.asarray([item.target_c for item in test], dtype=float)
 
-    candidates = {
-        "XGBoost": Pipeline(
-            [
-                ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
-                (
-                    "regressor",
-                    XGBRegressor(
-                        objective="reg:squarederror",
-                        n_estimators=250,
-                        max_depth=4,
-                        learning_rate=0.04,
-                        min_child_weight=5,
-                        subsample=0.85,
-                        colsample_bytree=0.9,
-                        reg_lambda=2.0,
-                        tree_method="hist",
-                        n_jobs=2,
-                        random_state=42,
+    candidates: dict[str, tuple[Pipeline, bool]] = {
+        "XGBoostDirect": (
+            Pipeline(
+                [
+                    ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
+                    (
+                        "regressor",
+                        XGBRegressor(
+                            objective="reg:squarederror",
+                            n_estimators=250,
+                            max_depth=4,
+                            learning_rate=0.04,
+                            min_child_weight=5,
+                            subsample=0.85,
+                            colsample_bytree=0.9,
+                            reg_lambda=2.0,
+                            tree_method="hist",
+                            n_jobs=2,
+                            random_state=42,
+                        ),
                     ),
-                ),
-            ]
+                ]
+            ),
+            False,
         ),
-        "GradientBoosting": Pipeline(
-            [
-                ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
-                (
-                    "regressor",
-                    GradientBoostingRegressor(
-                        loss="huber",
-                        n_estimators=150,
-                        learning_rate=0.04,
-                        max_depth=3,
-                        min_samples_leaf=5,
-                        random_state=42,
+        "GradientBoosting": (
+            Pipeline(
+                [
+                    ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
+                    (
+                        "regressor",
+                        GradientBoostingRegressor(
+                            loss="huber",
+                            n_estimators=150,
+                            learning_rate=0.04,
+                            max_depth=3,
+                            min_samples_leaf=5,
+                            random_state=42,
+                        ),
                     ),
-                ),
-            ]
+                ]
+            ),
+            False,
+        ),
+        "XGBoostResidual": (
+            Pipeline(
+                [
+                    ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
+                    (
+                        "regressor",
+                        XGBRegressor(
+                            objective="reg:squarederror",
+                            n_estimators=250,
+                            max_depth=4,
+                            learning_rate=0.04,
+                            min_child_weight=5,
+                            subsample=0.85,
+                            colsample_bytree=0.9,
+                            reg_lambda=2.0,
+                            tree_method="hist",
+                            n_jobs=2,
+                            random_state=42,
+                        ),
+                    ),
+                ]
+            ),
+            True,
         ),
     }
     validation_baseline = np.asarray(
         [item.persistence_prediction_c for item in validation], dtype=float
     )
     baseline_validation_metrics = _metrics(y_validation, validation_baseline)
-    fitted: dict[str, tuple[Pipeline, dict[str, float]]] = {}
-    for name, model in candidates.items():
-        model.fit(x_train, y_train)
+    validation_trend_baseline_metrics = _metrics(
+        y_validation,
+        _linear_trend_predictions(validation),
+    )
+    fitted: dict[str, tuple[Any, dict[str, float]]] = {}
+    current_temperature_index = FEATURE_NAMES.index("temperature_current_c")
+    current_train = x_train[:, current_temperature_index]
+    current_validation = x_validation[:, current_temperature_index]
+    for name, (model, predicts_residual) in candidates.items():
+        target = y_train - current_train if predicts_residual else y_train
+        model.fit(x_train, target)
+        if predicts_residual:
+            residual_validation = model.predict(x_validation)
+            correction_weight = _select_residual_correction_weight(
+                y_validation,
+                validation_baseline,
+                residual_validation,
+            )
+            validation_prediction = (
+                current_validation + correction_weight * residual_validation
+            )
+            prediction_model = _PersistenceResidualPipeline(model, correction_weight)
+        else:
+            validation_prediction = model.predict(x_validation)
+            prediction_model = model
         fitted[name] = (
-            model,
-            _metrics(y_validation, model.predict(x_validation)),
+            prediction_model,
+            _metrics(y_validation, validation_prediction),
         )
 
     validation_eligible = [
@@ -237,6 +305,7 @@ def train_component(
             "reason": "Neither candidate improved on the persistence baseline on validation data.",
             "examples": _split_counts(train, validation, test),
             "validationBaseline": baseline_validation_metrics,
+            "validationLinearTrendBaseline": validation_trend_baseline_metrics,
             "candidates": {
                 name: {"validation": metrics} for name, (_, metrics) in fitted.items()
             },
@@ -252,6 +321,10 @@ def train_component(
         [item.persistence_prediction_c for item in test], dtype=float
     )
     test_baseline_metrics = _metrics(y_test, test_baseline)
+    test_trend_baseline_metrics = _metrics(
+        y_test,
+        _linear_trend_predictions(test),
+    )
     report: dict[str, Any] = {
         "component": component,
         "status": "NOT_PROMOTED",
@@ -259,8 +332,10 @@ def train_component(
         "candidate": selected,
         "examples": _split_counts(train, validation, test),
         "validationBaseline": baseline_validation_metrics,
+        "validationLinearTrendBaseline": validation_trend_baseline_metrics,
         "validation": selected_validation_metrics,
         "testBaseline": test_baseline_metrics,
+        "testLinearTrendBaseline": test_trend_baseline_metrics,
         "test": test_metrics,
         "candidates": {
             name: {"validation": metrics} for name, (_, metrics) in fitted.items()
@@ -278,22 +353,46 @@ def train_component(
             report["reason"] = "Candidate would regress the active model on held-out test data."
             return report
 
+    # Keep the validation and test metrics tied to models that never saw those
+    # partitions. Once promotion is earned, refit on all available history so
+    # the installed model benefits from every collected example.
+    all_features = _features_matrix(examples)
+    all_targets = np.asarray([item.target_c for item in examples], dtype=float)
+    if isinstance(selected_model, _PersistenceResidualPipeline):
+        residual_model = clone(selected_model.residual_model)
+        all_current = all_features[:, current_temperature_index]
+        residual_model.fit(all_features, all_targets - all_current)
+        installed_model = _PersistenceResidualPipeline(
+            residual_model,
+            selected_model.correction_weight,
+        )
+    else:
+        installed_model = clone(selected_model)
+        installed_model.fit(all_features, all_targets)
+
     artifact_dir = model_dir.resolve()
     artifact_dir.mkdir(parents=True, exist_ok=True)
     created_at = datetime.now(timezone.utc)
     timestamps = [item.timestamp for item in examples]
+    model_version = (
+        f"{created_at.strftime('%Y%m%dT%H%M%S%fZ')}-{uuid.uuid4().hex[:8]}"
+    )
     artifact_name = (
-        f"{component.lower()}-{selected.lower()}-"
-        f"{created_at.strftime('%Y%m%dT%H%M%S%fZ')}-{uuid.uuid4().hex[:8]}.joblib"
+        f"{component.lower()}-{selected.lower()}-{model_version}.joblib"
     )
     artifact_path = artifact_dir / artifact_name
     artifact = {
-        "schemaVersion": 1,
+        "schemaVersion": MODEL_SCHEMA_VERSION,
+        "targetHorizonSeconds": TARGET_HORIZON_SECONDS,
         "component": component,
         "model": selected,
+        "modelVersion": model_version,
+        "validated": True,
         "trainedAt": created_at.isoformat(),
         "dataStart": min(timestamps).isoformat(),
         "dataEnd": max(timestamps).isoformat(),
+        "trainingExamples": len(examples),
+        "fitScope": "all_eligible_history_after_chronological_holdout_evaluation",
         "trainingEnvironment": {
             "python": os.sys.version.split()[0],
             "numpy": np.__version__,
@@ -303,23 +402,30 @@ def train_component(
         "featureNames": FEATURE_NAMES,
         "metrics": {
             "validation": selected_validation_metrics,
+            "validationLinearTrendBaseline": validation_trend_baseline_metrics,
             "test": test_metrics,
             "testBaseline": test_baseline_metrics,
+            "testLinearTrendBaseline": test_trend_baseline_metrics,
             "examples": _split_counts(train, validation, test),
         },
-        "pipeline": selected_model,
+        "pipeline": installed_model,
     }
     _atomic_joblib_dump(artifact, artifact_path)
     manifest_path = artifact_dir / "manifest.json"
-    manifest = manifest or {"schemaVersion": 1, "models": {}}
-    manifest.setdefault("schemaVersion", 1)
+    manifest = manifest or {"schemaVersion": MODEL_SCHEMA_VERSION, "models": {}}
+    manifest["schemaVersion"] = MODEL_SCHEMA_VERSION
     manifest.setdefault("models", {})
     manifest["models"][component] = {
         "artifact": artifact_name,
         "model": selected,
+        "modelVersion": model_version,
+        "targetHorizonSeconds": TARGET_HORIZON_SECONDS,
+        "validated": True,
         "trainedAt": created_at.isoformat(),
         "dataStart": min(timestamps).isoformat(),
         "dataEnd": max(timestamps).isoformat(),
+        "trainingExamples": len(examples),
+        "fitScope": "all_eligible_history_after_chronological_holdout_evaluation",
         "trainingEnvironment": artifact["trainingEnvironment"],
         "featureNames": FEATURE_NAMES,
         "metrics": artifact["metrics"],
@@ -331,6 +437,7 @@ def train_component(
         "without regressing the active model."
     )
     report["artifact"] = str(artifact_path)
+    report["modelVersion"] = model_version
     _prune_component_artifacts(artifact_dir, component, artifact_name)
     return report
 
@@ -350,12 +457,16 @@ def train_from_history(
                 "rejectedSensorRows": {},
                 "rejectedTargetCandidates": {},
                 "components": {
-                    component: {
-                        "component": component,
+                    "CPU": {
+                        "component": "CPU",
                         "status": "TRAINING_BUSY",
                         "reason": "Another training job already holds the model-directory lock.",
-                    }
-                    for component in ("CPU", "GPU")
+                    },
+                    "GPU": {
+                        "component": "GPU",
+                        "status": "NOT_CONFIGURED",
+                        "reason": "The five-minute integration is configured for CPU forecasts only.",
+                    },
                 },
             }
         return _run_training_cycle(
@@ -376,38 +487,37 @@ def _run_training_cycle(
     points, rejected_rows = load_points(files)
     examples, rejected_targets = build_examples(points)
     components: dict[str, dict[str, Any]] = {}
-    for component in ("CPU", "GPU"):
-        try:
-            components[component] = train_component(
-                component,
-                examples[component],
-                model_dir,
-                minimum_train,
-                minimum_evaluation,
-            )
-        except InsufficientTrainingDataError as exception:
-            components[component] = {
-                "component": component,
-                "status": "INSUFFICIENT_DATA",
-                "reason": str(exception),
-                "validTenMinutePairs": len(examples[component]),
-            }
-        except Exception as exception:
-            logger.exception("Training failed for %s.", component)
-            components[component] = {
-                "component": component,
-                "status": "TRAINING_ERROR",
-                "reason": str(exception),
-                "validTenMinutePairs": len(examples[component]),
-            }
-    statuses = [item["status"] for item in components.values()]
-    status = (
-        "PROMOTED" if "PROMOTED" in statuses
-        else "INSUFFICIENT_DATA" if all(item == "INSUFFICIENT_DATA" for item in statuses)
-        else "NOT_PROMOTED" if "NOT_PROMOTED" in statuses
-        else "TRAINING_BUSY" if all(item == "TRAINING_BUSY" for item in statuses)
-        else "TRAINING_ERROR"
-    )
+    component = "CPU"
+    try:
+        components[component] = train_component(
+            component,
+            examples[component],
+            model_dir,
+            minimum_train,
+            minimum_evaluation,
+        )
+    except InsufficientTrainingDataError as exception:
+        components[component] = {
+            "component": component,
+            "status": "INSUFFICIENT_DATA",
+            "reason": str(exception),
+            "validFiveMinutePairs": len(examples[component]),
+        }
+    except Exception as exception:
+        logger.exception("Training failed for %s.", component)
+        components[component] = {
+            "component": component,
+            "status": "TRAINING_ERROR",
+            "reason": str(exception),
+            "validFiveMinutePairs": len(examples[component]),
+        }
+    components["GPU"] = {
+        "component": "GPU",
+        "status": "NOT_CONFIGURED",
+        "reason": "The five-minute integration is configured for CPU forecasts only.",
+        "validFiveMinutePairs": len(examples["GPU"]),
+    }
+    status = components["CPU"]["status"]
     return {
         "status": status,
         "csvFilesInspected": len(files),
@@ -491,6 +601,13 @@ def _load_incumbent(
         raise ValueError("The active model manifest is unreadable; refusing model promotion.") from exception
     if not isinstance(manifest, dict) or not isinstance(manifest.get("models"), dict):
         raise ValueError("The active model manifest is invalid; refusing model promotion.")
+    if manifest.get("schemaVersion") == 1:
+        raise ValueError(
+            "The active model directory contains ten-minute artifacts; use the separate "
+            "five-minute model directory rather than replacing them."
+        )
+    if manifest.get("schemaVersion") != MODEL_SCHEMA_VERSION:
+        raise ValueError("The active model manifest version is unsupported; refusing model promotion.")
     entry = manifest["models"].get(component)
     if entry is None:
         return None, manifest
@@ -506,11 +623,23 @@ def _load_incumbent(
         incumbent = joblib.load(artifact_path)
     except Exception as exception:
         raise ValueError(f"The active {component} model artifact cannot be loaded.") from exception
+    if isinstance(incumbent, dict) and incumbent.get("schemaVersion") == 1:
+        raise ValueError(
+            f"The active {component} model is a ten-minute artifact; "
+            "refusing to replace it from the five-minute training pipeline."
+        )
     if (
         not isinstance(incumbent, dict)
-        or incumbent.get("schemaVersion") != 1
+        or incumbent.get("schemaVersion") != MODEL_SCHEMA_VERSION
+        or incumbent.get("targetHorizonSeconds") != TARGET_HORIZON_SECONDS
         or incumbent.get("component") != component
         or incumbent.get("featureNames") != FEATURE_NAMES
+        or not isinstance(incumbent.get("modelVersion"), str)
+        or not incumbent.get("modelVersion")
+        or incumbent.get("validated") is not True
+        or entry.get("modelVersion") != incumbent.get("modelVersion")
+        or entry.get("targetHorizonSeconds") != TARGET_HORIZON_SECONDS
+        or entry.get("validated") is not True
         or not hasattr(incumbent.get("pipeline"), "predict")
     ):
         raise ValueError(f"The active {component} model artifact is invalid; refusing promotion.")
@@ -557,6 +686,41 @@ def _metrics(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
     }
 
 
+def _linear_trend_predictions(examples: list[TrainingExample]) -> np.ndarray:
+    horizon_minutes = TARGET_HORIZON_SECONDS / 60
+    predictions = []
+    for example in examples:
+        current = example.features.get("temperature_current_c")
+        slope = example.features.get("temperature_slope_300s_c_per_min")
+        if current is None:
+            raise ValueError("Linear-trend baseline requires current temperature.")
+        predictions.append(
+            current if slope is None else current + slope * horizon_minutes
+        )
+    return np.asarray(predictions, dtype=float)
+
+
+def _select_residual_correction_weight(
+    actual: np.ndarray,
+    persistence: np.ndarray,
+    predicted_residual: np.ndarray,
+) -> float:
+    baseline = _metrics(actual, persistence)
+    mae_scale = max(baseline["mae_c"], 1e-12)
+    rmse_scale = max(baseline["rmse_c"], 1e-12)
+    weights = np.linspace(0.0, 1.0, 101)
+
+    def score(weight: float) -> tuple[float, float, float]:
+        metrics = _metrics(actual, persistence + weight * predicted_residual)
+        return (
+            metrics["mae_c"] / mae_scale + metrics["rmse_c"] / rmse_scale,
+            metrics["rmse_c"],
+            metrics["mae_c"],
+        )
+
+    return float(min(weights, key=score))
+
+
 def _split_counts(
     train: list[TrainingExample],
     validation: list[TrainingExample],
@@ -591,7 +755,7 @@ def _example_summary(examples: list[TrainingExample]) -> dict[str, Any]:
         or len(test) < MIN_EVALUATION_EXAMPLES
     ):
         reason = (
-            "After chronological splitting and the ten-minute target embargo, "
+            "After chronological splitting and the five-minute target embargo, "
             f"found train={len(train)}, validation={len(validation)}, test={len(test)}; "
             f"require at least {MIN_TRAINING_EXAMPLES}, {MIN_EVALUATION_EXAMPLES}, "
             f"and {MIN_EVALUATION_EXAMPLES}."
@@ -599,7 +763,7 @@ def _example_summary(examples: list[TrainingExample]) -> dict[str, Any]:
     else:
         reason = None
     summary: dict[str, Any] = {
-        "validTenMinutePairs": len(examples),
+        "validFiveMinutePairs": len(examples),
         "splitCounts": split_counts,
         "trainingStatus": "INSUFFICIENT_DATA" if reason else "SUFFICIENT_DATA",
         "trainingReason": reason,

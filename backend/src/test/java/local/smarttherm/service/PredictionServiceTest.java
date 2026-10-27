@@ -32,7 +32,7 @@ class PredictionServiceTest {
         assertThat(result.status()).isEqualTo("MODEL_NOT_READY");
         assertThat(result.trainedModel()).isFalse();
         assertThat(result.model()).contains("No validated trained model");
-        assertThat(result.targetTime()).isEqualTo(result.generatedAt().plusSeconds(600));
+        assertThat(result.targetTime()).isEqualTo(result.generatedAt().plusSeconds(300));
         assertThat(result.forecasts().getFirst().predictedC()).isNull();
     }
 
@@ -53,8 +53,8 @@ class PredictionServiceTest {
     void passesTheFullRollingWindowToInference() {
         Instant now = Instant.now();
         List<ThermalReading> readings = List.of(
-                reading(now.minusSeconds(600), 60.0),
-                reading(now.minusSeconds(300), 62.0),
+                reading(now.minusSeconds(300), 60.0),
+                reading(now.minusSeconds(150), 62.0),
                 reading(now, 64.0));
         PythonPredictionClient client = mock(PythonPredictionClient.class);
         when(client.predict(anyList())).thenReturn(
@@ -74,9 +74,9 @@ class PredictionServiceTest {
                 "Python trained models: XGBoost",
                 true,
                 now,
-                now.plusSeconds(600),
+                now.plusSeconds(300),
                 List.of(new local.smarttherm.model.PredictionForecast(
-                        "CPU", 64.0, 70.0, now, now.plusSeconds(600), "READY", "XGBoost")));
+                        "CPU", 64.0, 70.0, now, now.plusSeconds(300), "READY", "XGBoost")));
         PythonPredictionClient client = mock(PythonPredictionClient.class);
         when(client.predict(anyList())).thenReturn(
                 new PythonPredictionClient.InferenceResult(Optional.of(trained), ""));

@@ -15,19 +15,20 @@ import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .dataset import MAX_GAP_SECONDS, SensorPoint
+from .dataset import MAX_GAP_SECONDS, TARGET_HORIZON_SECONDS, SensorPoint
 from .features import FEATURE_NAMES, compute_features
 from .auto_training import BackgroundTrainingCoordinator
 
 logger = logging.getLogger("smarttherm.ml")
 MAX_READINGS = 150
 MAX_READING_AGE = timedelta(seconds=15)
-PREDICTION_HORIZON = timedelta(minutes=10)
+PREDICTION_HORIZON = timedelta(seconds=TARGET_HORIZON_SECONDS)
+PREDICTION_HORIZON_MINUTES = TARGET_HORIZON_SECONDS // 60
 MAX_TEMPERATURE_C = 150
 MODEL_DIR = Path(
     os.environ.get(
         "SMARTTHERM_MODEL_DIR",
-        str(Path(__file__).resolve().parents[1] / "models"),
+        str(Path(__file__).resolve().parents[1] / "models-five-minute"),
     )
 ).resolve()
 PROJECT_ROOT = Path(
@@ -115,42 +116,48 @@ class ModelRegistry:
 
     def _reload_if_changed(self) -> None:
         manifest_path = self.model_dir / "manifest.json"
-        if not manifest_path.is_file():
-            with self._lock:
-                self.models.clear()
-                self.errors.clear()
-                self._manifest_signature = None
-            return
         try:
             stat = manifest_path.stat()
+        except FileNotFoundError:
+            with self._lock:
+                self.models.clear()
+                self.errors = {
+                    component: "model manifest is missing"
+                    for component in ("CPU", "GPU")
+                }
+                self._manifest_signature = None
+            return
         except OSError as exc:
             logger.error("Could not inspect model manifest %s: %s", manifest_path, exc)
+            self._fail_closed(f"could not inspect model manifest: {exc}")
             return
         signature = (stat.st_mtime_ns, stat.st_size)
         with self._lock:
             if signature == self._manifest_signature:
                 return
-            loaded_models = dict(self.models)
-            loaded_errors = dict(self.errors)
+            self._manifest_signature = signature
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             logger.error("Could not read model manifest %s: %s", manifest_path, exc)
+            self._fail_closed(f"model manifest is unreadable: {exc}", signature)
             return
-        if not isinstance(manifest, dict):
-            logger.error("Model manifest has an invalid root object.")
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("schemaVersion") != 2
+            or not isinstance(manifest.get("models"), dict)
+        ):
+            logger.error("Model manifest has an invalid schema or models section.")
+            self._fail_closed("model manifest schema is invalid", signature)
             return
-        entries = manifest.get("models", {})
-        if not isinstance(entries, dict):
-            logger.error("Model manifest has an invalid models section.")
-            return
-        for component in ("CPU", "GPU"):
-            if component not in entries:
-                loaded_models.pop(component, None)
-                loaded_errors.pop(component, None)
+
+        entries = manifest["models"]
+        loaded_models: dict[str, dict[str, Any]] = {}
+        loaded_errors: dict[str, str] = {}
         for component in ("CPU", "GPU"):
             entry = entries.get(component)
             if not isinstance(entry, dict):
+                loaded_errors[component] = "no model is registered for this component"
                 continue
             filename = entry.get("artifact")
             if not isinstance(filename, str) or Path(filename).name != filename:
@@ -163,23 +170,42 @@ class ModelRegistry:
             try:
                 artifact = joblib.load(artifact_path)
             except Exception as exc:
-                loaded_errors[component] = "artifact could not be loaded"
+                loaded_errors[component] = f"artifact could not be loaded: {exc}"
                 logger.error("Could not load %s model artifact: %s", component, exc)
                 continue
             if (
                 not isinstance(artifact, dict)
-                or artifact.get("schemaVersion") != 1
+                or artifact.get("schemaVersion") != 2
+                or artifact.get("targetHorizonSeconds") != TARGET_HORIZON_SECONDS
                 or artifact.get("component") != component
                 or artifact.get("featureNames") != FEATURE_NAMES
+                or not isinstance(artifact.get("modelVersion"), str)
+                or not artifact.get("modelVersion")
+                or not isinstance(artifact.get("model"), str)
+                or not artifact.get("model")
+                or artifact.get("validated") is not True
+                or entry.get("model") != artifact.get("model")
+                or entry.get("modelVersion") != artifact.get("modelVersion")
+                or entry.get("targetHorizonSeconds") != TARGET_HORIZON_SECONDS
+                or entry.get("validated") is not True
                 or not hasattr(artifact.get("pipeline"), "predict")
             ):
                 loaded_errors[component] = "artifact metadata does not match the active feature contract"
                 continue
             loaded_models[component] = artifact
-            loaded_errors.pop(component, None)
         with self._lock:
             self.models = loaded_models
             self.errors = loaded_errors
+            self._manifest_signature = signature
+
+    def _fail_closed(
+        self,
+        reason: str,
+        signature: tuple[int, int] | None = None,
+    ) -> None:
+        with self._lock:
+            self.models.clear()
+            self.errors = {component: reason for component in ("CPU", "GPU")}
             self._manifest_signature = signature
 
     def model(self, component: str) -> dict[str, Any] | None:
@@ -191,6 +217,11 @@ class ModelRegistry:
         self.reload_if_changed()
         with self._lock:
             return bool(self.models)
+
+    def error(self, component: str) -> str | None:
+        self.reload_if_changed()
+        with self._lock:
+            return self.errors.get(component)
 
     def health(self) -> dict[str, Any]:
         self.reload_if_changed()
@@ -204,6 +235,9 @@ class ModelRegistry:
                 component: {
                     "available": component in models,
                     "model": models.get(component, {}).get("model"),
+                    "modelVersion": models.get(component, {}).get("modelVersion"),
+                    "horizonMinutes": PREDICTION_HORIZON_MINUTES,
+                    "validated": models.get(component, {}).get("validated", False),
                     "error": errors.get(component),
                 }
                 for component in ("CPU", "GPU")
@@ -314,6 +348,7 @@ def create_app(
             current = getattr(newest, temperature_field)
             model_artifact = registry.model(component)
             if model_artifact is None:
+                reason = registry.error(component) or "No validated trained model is available."
                 forecasts.append(
                     _forecast(
                         component,
@@ -322,7 +357,7 @@ def create_app(
                         generated_at,
                         target_time,
                         "MODEL_UNAVAILABLE",
-                        "No validated trained model is available.",
+                        reason,
                     )
                 )
                 continue
@@ -365,6 +400,7 @@ def create_app(
                         target_time,
                         "READY",
                         model_artifact["model"],
+                        model_artifact["modelVersion"],
                     )
                 )
             except (ValueError, TypeError, ArithmeticError, IndexError) as exc:
@@ -394,6 +430,7 @@ def create_app(
             "trainedModel": ready,
             "generatedAt": generated_at.isoformat(),
             "targetTime": target_time.isoformat(),
+            "horizonMinutes": PREDICTION_HORIZON_MINUTES,
             "forecasts": forecasts,
         }
 
@@ -408,6 +445,7 @@ def _forecast(
     target_time: datetime,
     status: str,
     model: str,
+    model_version: str | None = None,
 ) -> dict[str, Any]:
     return {
         "component": component,
@@ -415,8 +453,10 @@ def _forecast(
         "predictedC": predicted,
         "generatedAt": generated_at.isoformat(),
         "targetTime": target_time.isoformat(),
+        "horizonMinutes": PREDICTION_HORIZON_MINUTES,
         "status": status,
         "model": model,
+        "modelVersion": model_version,
     }
 
 
@@ -449,6 +489,7 @@ def _unavailable_response(
         "trainedModel": False,
         "generatedAt": generated_at.isoformat(),
         "targetTime": target_time.isoformat(),
+        "horizonMinutes": PREDICTION_HORIZON_MINUTES,
         "forecasts": forecasts,
     }
 

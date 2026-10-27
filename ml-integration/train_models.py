@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from smarttherm_ml.training import (
@@ -14,13 +15,18 @@ from smarttherm_ml.training import (
 def main() -> int:
     default_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(
-        description="Train and chronologically evaluate SmartTherm ten-minute regressors."
+        description="Train and chronologically evaluate SmartTherm five-minute regressors."
     )
     parser.add_argument("--project-root", type=Path, default=default_root)
     parser.add_argument(
         "--model-dir",
         type=Path,
-        default=Path(__file__).resolve().parent / "models",
+        default=Path(
+            os.environ.get(
+                "SMARTTHERM_MODEL_DIR",
+                str(Path(__file__).resolve().parent / "models-five-minute"),
+            )
+        ),
     )
     parser.add_argument("--min-train", type=int, default=MIN_TRAINING_EXAMPLES)
     parser.add_argument("--min-evaluation", type=int, default=MIN_EVALUATION_EXAMPLES)
