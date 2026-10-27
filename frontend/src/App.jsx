@@ -21,6 +21,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Line,
   ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
