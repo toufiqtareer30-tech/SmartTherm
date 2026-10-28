@@ -1,0 +1,403 @@
+{
+  "evaluationType": "synthetic_external_stress_test_only",
+  "model": "XGBoostResidual",
+  "modelTrainedAt": "2026-10-27T18:49:50.538748+05:30",
+  "targetHorizonSeconds": 300,
+  "sourceCsv": "C:\\Users\\rithv\\OneDrive\\Documents\\github\\smarttherm\\ml-integration\\experiments\\high-temperature-stress-test\\mixed_cpu_high_temperature_stress.csv",
+  "rejectedRows": {},
+  "rejectedTargets": {
+    "insufficient_feature_history": 24,
+    "missing_five_minute_target": 684
+  },
+  "allFiveMinuteExamples": {
+    "examples": 3624,
+    "model": {
+      "mae_c": 4.7663,
+      "rmse_c": 5.6568
+    },
+    "persistence": {
+      "mae_c": 4.6322,
+      "rmse_c": 5.8696
+    }
+  },
+  "targetAbove90C": {
+    "examples": 1655,
+    "model": {
+      "mae_c": 3.7624,
+      "rmse_c": 4.9609
+    },
+    "persistence": {
+      "mae_c": 2.4623,
+      "rmse_c": 4.1448
+    }
+  },
+  "currentAndTargetAbove90C": {
+    "examples": 1282,
+    "model": {
+      "mae_c": 2.1839,
+      "rmse_c": 2.4048
+    },
+    "persistence": {
+      "mae_c": 0.8884,
+      "rmse_c": 1.4365
+    }
+  },
+  "note": "Temperatures and workloads in this CSV are synthetic. These errors describe only this generated stress-test distribution; they are not real-hardware accuracy. This file is under ml-integration/experiments/high-temperature-stress-test and is excluded from automatic training discovery.",
+  "csvCounts": {
+    "rows": 4332,
+    "cpuReadingsOver90C": 1762,
+    "cpuReadingsAtOrBelow90C": 2570
+  },
+  "augmentedTrainingExperiment": {
+    "evaluationType": "isolated_real_plus_synthetic_training_experiment",
+    "realCsvFiles": 36,
+    "realAndSyntheticSensorRows": 9541,
+    "rejectedRows": {},
+    "rejectedTargets": {
+      "insufficient_feature_history": 92,
+      "missing_five_minute_target": 2268
+    },
+    "fiveMinuteExamples": 7181,
+    "heldOutTargetAbove90CExamples": 420,
+    "heldOutCurrentAndTargetAbove90CExamples": 320,
+    "trainingResult": {
+      "component": "CPU",
+      "status": "NOT_PROMOTED",
+      "reason": "Neither candidate improved on the persistence baseline on validation data.",
+      "examples": {
+        "train": 3373,
+        "validation": 1848,
+        "test": 1896
+      },
+      "validationBaseline": {
+        "mae_c": 4.0977,
+        "rmse_c": 5.5682
+      },
+      "candidates": {
+        "XGBoostDirect": {
+          "validation": {
+            "mae_c": 15.6762,
+            "rmse_c": 16.4215
+          }
+        },
+        "GradientBoosting": {
+          "validation": {
+            "mae_c": 14.9065,
+            "rmse_c": 15.7928
+          }
+        },
+        "XGBoostResidual": {
+          "validation": {
+            "mae_c": 4.1066,
+            "rmse_c": 5.2077
+          }
+        }
+      }
+    },
+    "note": "The temporary experimental artifact was not installed. Promotion status and metrics come from the existing chronological validation/holdout gates; the installed model and manifest are unchanged. Synthetic examples are not real-hardware evidence."
+  },
+  "syntheticAwareXGBoostExperiment": {
+    "trainingExamples": 6577,
+    "validationExamples": 302,
+    "heldOutHotSessionExamples": 302,
+    "heldOutTargetAbove90CExamples": 207,
+    "validationSession": "synthetic-stress-07",
+    "heldOutSession": "synthetic-stress-08",
+    "selectedHyperparameters": {
+      "maxDepth": 5,
+      "minChildWeight": 5,
+      "correctionWeight": 1.0
+    },
+    "validation": {
+      "model": {
+        "mae_c": 1.1896,
+        "rmse_c": 1.6145
+      },
+      "persistence": {
+        "mae_c": 4.0805,
+        "rmse_c": 5.5616
+      }
+    },
+    "heldOutAll": {
+      "model": {
+        "mae_c": 1.2091,
+        "rmse_c": 1.6438
+      },
+      "persistence": {
+        "mae_c": 4.0822,
+        "rmse_c": 5.5673
+      }
+    },
+    "heldOutTargetAbove90C": {
+      "model": {
+        "mae_c": 1.0088,
+        "rmse_c": 1.2611
+      },
+      "persistence": {
+        "mae_c": 2.4998,
+        "rmse_c": 4.2057
+      }
+    },
+    "beatsPersistenceOnBothHighTempMetrics": true,
+    "note": "This is a separate synthetic-aware experiment. The test session is held out from training and correction-weight selection. The candidate is not installed or used by live inference."
+  },
+  "fullDatasetExperimentalFit": {
+    "realCsvFiles": 36,
+    "realSensorRows": 5209,
+    "syntheticSensorRows": 4332,
+    "rejectedRows": {},
+    "rejectedTargets": {
+      "insufficient_feature_history": 92,
+      "missing_five_minute_target": 2268
+    },
+    "fitExamples": 7181,
+    "modelArtifact": "C:\\Users\\rithv\\OneDrive\\Documents\\github\\smarttherm\\ml-integration\\experiments\\high-temperature-stress-test\\experimental_full_dataset_cpu_xgboostresidual.joblib",
+    "selectedHyperparametersFromValidation": {
+      "maxDepth": 5,
+      "minChildWeight": 5,
+      "correctionWeight": 1.0
+    },
+    "inSampleMetrics_not_holdout": {
+      "allExamples": {
+        "examples": 7181,
+        "model": {
+          "mae_c": 1.8813,
+          "rmse_c": 2.819
+        },
+        "persistence": {
+          "mae_c": 5.4801,
+          "rmse_c": 7.6473
+        }
+      },
+      "realExamples": {
+        "examples": 3557,
+        "model": {
+          "mae_c": 2.7831,
+          "rmse_c": 3.7619
+        },
+        "persistence": {
+          "mae_c": 6.3441,
+          "rmse_c": 9.1084
+        }
+      },
+      "syntheticExamples": {
+        "examples": 3624,
+        "model": {
+          "mae_c": 0.9962,
+          "rmse_c": 1.3622
+        },
+        "persistence": {
+          "mae_c": 4.6322,
+          "rmse_c": 5.8696
+        }
+      },
+      "syntheticTargetsAbove90C": {
+        "examples": 1655,
+        "model": {
+          "mae_c": 0.8243,
+          "rmse_c": 1.0585
+        },
+        "persistence": {
+          "mae_c": 2.4623,
+          "rmse_c": 4.1448
+        }
+      }
+    },
+    "note": "This experimental model was fit on every listed example, so these in-sample metrics are not unbiased performance estimates. Use the separate syntheticAwareXGBoostExperiment held-out session scores for the independent test result. This artifact is not registered or loaded by SmartTherm."
+  },
+  "commonDataModelComparison": {
+    "comparisonCsv": "C:\\Users\\rithv\\OneDrive\\Documents\\github\\smarttherm\\ml-integration\\experiments\\high-temperature-stress-test\\combined_dataset_model_comparison.csv",
+    "commonHeldOutSession": "synthetic-stress-08",
+    "commonHeldOutExamples": 302,
+    "heldOutTargetAbove90CExamples": 207,
+    "fullCombinedExamples": 7181,
+    "selectedResidualHyperparameters": {
+      "maxDepth": 5,
+      "minChildWeight": 5,
+      "correctionWeight": 1.0
+    },
+    "rows": [
+      {
+        "evaluation_scope": "heldout_synthetic_session_08",
+        "subset": "all",
+        "model": "Persistence",
+        "examples": 302,
+        "mae_c": 4.0822,
+        "mse_c2": 30.9948,
+        "rmse_c": 5.5673
+      },
+      {
+        "evaluation_scope": "heldout_synthetic_session_08",
+        "subset": "all",
+        "model": "Installed residual XGBoost (real-only)",
+        "examples": 302,
+        "mae_c": 4.2022,
+        "mse_c2": 26.5781,
+        "rmse_c": 5.1554
+      },
+      {
+        "evaluation_scope": "heldout_synthetic_session_08",
+        "subset": "all",
+        "model": "Direct XGBoost (train split)",
+        "examples": 302,
+        "mae_c": 1.491,
+        "mse_c2": 3.9828,
+        "rmse_c": 1.9957
+      },
+      {
+        "evaluation_scope": "heldout_synthetic_session_08",
+        "subset": "all",
+        "model": "Gradient Boosting (train split)",
+        "examples": 302,
+        "mae_c": 1.7819,
+        "mse_c2": 5.3495,
+        "rmse_c": 2.3129
+      },
+      {
+        "evaluation_scope": "heldout_synthetic_session_08",
+        "subset": "all",
+        "model": "Residual XGBoost (synthetic-aware train split)",
+        "examples": 302,
+        "mae_c": 1.2091,
+        "mse_c2": 2.7021,
+        "rmse_c": 1.6438
+      },
+      {
+        "evaluation_scope": "heldout_synthetic_session_08",
+        "subset": "target_above_90C",
+        "model": "Persistence",
+        "examples": 207,
+        "mae_c": 2.4998,
+        "mse_c2": 17.6879,
+        "rmse_c": 4.2057
+      },
+      {
+        "evaluation_scope": "heldout_synthetic_session_08",
+        "subset": "target_above_90C",
+        "model": "Installed residual XGBoost (real-only)",
+        "examples": 207,
+        "mae_c": 3.7207,
+        "mse_c2": 24.7974,
+        "rmse_c": 4.9797
+      },
+      {
+        "evaluation_scope": "heldout_synthetic_session_08",
+        "subset": "target_above_90C",
+        "model": "Direct XGBoost (train split)",
+        "examples": 207,
+        "mae_c": 1.0986,
+        "mse_c2": 2.0874,
+        "rmse_c": 1.4448
+      },
+      {
+        "evaluation_scope": "heldout_synthetic_session_08",
+        "subset": "target_above_90C",
+        "model": "Gradient Boosting (train split)",
+        "examples": 207,
+        "mae_c": 1.2709,
+        "mse_c2": 2.4561,
+        "rmse_c": 1.5672
+      },
+      {
+        "evaluation_scope": "heldout_synthetic_session_08",
+        "subset": "target_above_90C",
+        "model": "Residual XGBoost (synthetic-aware train split)",
+        "examples": 207,
+        "mae_c": 1.0088,
+        "mse_c2": 1.5904,
+        "rmse_c": 1.2611
+      },
+      {
+        "evaluation_scope": "combined_real_plus_synthetic_in_sample",
+        "subset": "all",
+        "model": "Persistence",
+        "examples": 7181,
+        "mae_c": 5.4801,
+        "mse_c2": 58.4812,
+        "rmse_c": 7.6473
+      },
+      {
+        "evaluation_scope": "combined_real_plus_synthetic_in_sample",
+        "subset": "all",
+        "model": "Installed residual XGBoost (real-only)",
+        "examples": 7181,
+        "mae_c": 5.2882,
+        "mse_c2": 50.1731,
+        "rmse_c": 7.0833
+      },
+      {
+        "evaluation_scope": "combined_real_plus_synthetic_in_sample",
+        "subset": "all",
+        "model": "Direct XGBoost (all-data fit)",
+        "examples": 7181,
+        "mae_c": 2.5288,
+        "mse_c2": 13.8816,
+        "rmse_c": 3.7258
+      },
+      {
+        "evaluation_scope": "combined_real_plus_synthetic_in_sample",
+        "subset": "all",
+        "model": "Gradient Boosting (all-data fit)",
+        "examples": 7181,
+        "mae_c": 3.1777,
+        "mse_c2": 22.9087,
+        "rmse_c": 4.7863
+      },
+      {
+        "evaluation_scope": "combined_real_plus_synthetic_in_sample",
+        "subset": "all",
+        "model": "Residual XGBoost (all-data fit)",
+        "examples": 7181,
+        "mae_c": 1.8813,
+        "mse_c2": 7.9468,
+        "rmse_c": 2.819
+      },
+      {
+        "evaluation_scope": "combined_real_plus_synthetic_in_sample",
+        "subset": "target_above_90C",
+        "model": "Persistence",
+        "examples": 1838,
+        "mae_c": 3.4484,
+        "mse_c2": 39.1751,
+        "rmse_c": 6.259
+      },
+      {
+        "evaluation_scope": "combined_real_plus_synthetic_in_sample",
+        "subset": "target_above_90C",
+        "model": "Installed residual XGBoost (real-only)",
+        "examples": 1838,
+        "mae_c": 4.5518,
+        "mse_c2": 42.8187,
+        "rmse_c": 6.5436
+      },
+      {
+        "evaluation_scope": "combined_real_plus_synthetic_in_sample",
+        "subset": "target_above_90C",
+        "model": "Direct XGBoost (all-data fit)",
+        "examples": 1838,
+        "mae_c": 1.8568,
+        "mse_c2": 12.1773,
+        "rmse_c": 3.4896
+      },
+      {
+        "evaluation_scope": "combined_real_plus_synthetic_in_sample",
+        "subset": "target_above_90C",
+        "model": "Gradient Boosting (all-data fit)",
+        "examples": 1838,
+        "mae_c": 2.3879,
+        "mse_c2": 22.88,
+        "rmse_c": 4.7833
+      },
+      {
+        "evaluation_scope": "combined_real_plus_synthetic_in_sample",
+        "subset": "target_above_90C",
+        "model": "Residual XGBoost (all-data fit)",
+        "examples": 1838,
+        "mae_c": 1.4151,
+        "mse_c2": 6.285,
+        "rmse_c": 2.507
+      }
+    ],
+    "note": "The held-out synthetic session is not used for training or model selection. The combined_real_plus_synthetic_in_sample scope trains on the same rows it scores, so those values are descriptive fit errors, not generalization estimates."
+  }
+}

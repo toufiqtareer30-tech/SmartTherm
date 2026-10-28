@@ -6,7 +6,6 @@ import local.smarttherm.model.AppSettings;
 import local.smarttherm.model.PredictionForecast;
 import local.smarttherm.model.PredictionSnapshot;
 import local.smarttherm.model.ThermalAlert;
-import local.smarttherm.model.ThermalReading;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,7 +37,6 @@ public class AlertService {
     private final List<ThermalAlert> alerts = new ArrayList<>();
     private final Map<String, Instant> lastCreated = new HashMap<>();
     private final Map<String, Boolean> activeByComponent = new HashMap<>();
-    private final Map<String, Boolean> actualActiveByComponent = new HashMap<>();
 
     public AlertService(
             ObjectMapper objectMapper,
@@ -56,22 +54,28 @@ public class AlertService {
             List<ThermalAlert> saved = objectMapper.readValue(
                     alertsFile.toFile(), new TypeReference<>() {});
             synchronized (this) {
+                boolean migratedLegacyAlerts = saved.stream()
+                        .anyMatch(alert -> alert.predictedC() == null && alert.active());
                 List<ThermalAlert> newestFirst = saved.stream()
+                        .map(alert -> alert.predictedC() == null && alert.active()
+                                ? new ThermalAlert(
+                                        alert.id(), alert.createdAt(), alert.component(), alert.currentC(),
+                                        null, alert.thresholdC(), alert.severity(), alert.message(),
+                                        alert.suggestedAction(), false)
+                                : alert)
                         .sorted(Comparator.comparing(ThermalAlert::createdAt).reversed())
                         .limit(MAX_ALERTS)
                         .toList();
                 alerts.addAll(newestFirst);
                 Set<String> seenForecastComponents = new HashSet<>();
-                Set<String> seenActualComponents = new HashSet<>();
                 for (ThermalAlert alert : newestFirst) {
-                    if (alert.predictedC() == null) {
-                        if (seenActualComponents.add(alert.component())) {
-                            actualActiveByComponent.put(alert.component(), alert.active());
-                        }
-                    } else if (seenForecastComponents.add(alert.component())) {
+                    if (alert.predictedC() != null && seenForecastComponents.add(alert.component())) {
                         activeByComponent.put(alert.component(), alert.active());
                         lastCreated.put(alert.component(), alert.createdAt());
                     }
+                }
+                if (migratedLegacyAlerts) {
+                    persist();
                 }
             }
         } catch (IOException exception) {
@@ -84,17 +88,10 @@ public class AlertService {
     }
 
     public synchronized void evaluate(PredictionSnapshot prediction, AppSettings settings) {
-        evaluateForecast(prediction, settings, null);
+        evaluateForecast(prediction, settings);
     }
 
-    public synchronized void evaluate(
-            PredictionSnapshot prediction, ThermalReading current, AppSettings settings) {
-        evaluateActualThresholds(current, settings);
-        evaluateForecast(prediction, settings, current);
-    }
-
-    private void evaluateForecast(
-            PredictionSnapshot prediction, AppSettings settings, ThermalReading current) {
+    private void evaluateForecast(PredictionSnapshot prediction, AppSettings settings) {
         if (!prediction.trainedModel() || prediction.forecasts() == null) {
             return;
         }
@@ -112,11 +109,6 @@ public class AlertService {
                 if (forecast.predictedC() <= threshold - 2) {
                     resolveForecast(forecast.component());
                 }
-                continue;
-            }
-            if (isCurrentlyAboveThreshold(current, forecast.component(), threshold)
-                    && !Boolean.TRUE.equals(activeByComponent.get(forecast.component()))) {
-                // The measured-temperature event is the notification for this crossing.
                 continue;
             }
             if (Boolean.TRUE.equals(activeByComponent.get(forecast.component()))) {
@@ -147,50 +139,6 @@ public class AlertService {
         }
     }
 
-    private void evaluateActualThresholds(ThermalReading current, AppSettings settings) {
-        if (current == null || !current.sourceAvailable()) {
-            return;
-        }
-        evaluateActualComponent("CPU", current.cpuTemperatureC(), settings.cpuWarningC());
-        evaluateActualComponent("GPU", current.gpuTemperatureC(), settings.gpuWarningC());
-    }
-
-    private void evaluateActualComponent(String component, Double temperatureC, Double thresholdC) {
-        if (temperatureC == null || !Double.isFinite(temperatureC)
-                || temperatureC < 0 || temperatureC > 150) {
-            return;
-        }
-        if (temperatureC <= thresholdC - 2) {
-            resolveActual(component);
-            return;
-        }
-        if (temperatureC < thresholdC || Boolean.TRUE.equals(actualActiveByComponent.get(component))) {
-            return;
-        }
-
-        Instant now = Instant.now();
-        String severity = temperatureC >= thresholdC + 5 ? "CRITICAL" : "WARNING";
-        ThermalAlert alert = new ThermalAlert(
-                UUID.randomUUID().toString(), now, component, temperatureC, null, thresholdC,
-                severity,
-                String.format("%s temperature reached %.1f°C (warning threshold %.1f°C).",
-                        component, temperatureC, thresholdC),
-                "Reduce demanding workloads and check that the computer's vents are unobstructed.",
-                true);
-        addAlert(alert);
-        actualActiveByComponent.put(component, true);
-    }
-
-    private static boolean isCurrentlyAboveThreshold(
-            ThermalReading current, String component, Double threshold) {
-        if (current == null || !current.sourceAvailable()) {
-            return false;
-        }
-        Double temperature = "CPU".equals(component)
-                ? current.cpuTemperatureC() : current.gpuTemperatureC();
-        return temperature != null && Double.isFinite(temperature) && temperature >= threshold;
-    }
-
     private void resolveForecast(String component) {
         if (!Boolean.TRUE.equals(activeByComponent.get(component))) {
             return;
@@ -202,24 +150,6 @@ public class AlertService {
                 alerts.set(index, new ThermalAlert(
                         alert.id(), alert.createdAt(), alert.component(), alert.currentC(),
                         alert.predictedC(), alert.thresholdC(), alert.severity(), alert.message(),
-                        alert.suggestedAction(), false));
-                persist();
-                return;
-            }
-        }
-    }
-
-    private void resolveActual(String component) {
-        if (!Boolean.TRUE.equals(actualActiveByComponent.get(component))) {
-            return;
-        }
-        actualActiveByComponent.put(component, false);
-        for (int index = 0; index < alerts.size(); index++) {
-            ThermalAlert alert = alerts.get(index);
-            if (alert.component().equals(component) && alert.active() && alert.predictedC() == null) {
-                alerts.set(index, new ThermalAlert(
-                        alert.id(), alert.createdAt(), alert.component(), alert.currentC(),
-                        null, alert.thresholdC(), alert.severity(), alert.message(),
                         alert.suggestedAction(), false));
                 persist();
                 return;

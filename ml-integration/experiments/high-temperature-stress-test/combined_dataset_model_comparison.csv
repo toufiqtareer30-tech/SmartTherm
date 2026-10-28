@@ -1,0 +1,21 @@
+evaluation_scope,subset,model,examples,mae_c,mse_c2,rmse_c
+heldout_synthetic_session_08,all,Persistence,302,4.0822,30.9948,5.5673
+heldout_synthetic_session_08,all,Installed residual XGBoost (real-only),302,31.96,1065.4479,32.6412
+heldout_synthetic_session_08,all,Direct XGBoost (train split),302,1.5909,4.2845,2.0699
+heldout_synthetic_session_08,all,Gradient Boosting (train split),302,1.7678,5.4536,2.3353
+heldout_synthetic_session_08,all,Residual XGBoost (synthetic-aware train split),302,1.5529,4.2957,2.0726
+heldout_synthetic_session_08,target_above_90C,Persistence,207,2.4998,17.6879,4.2057
+heldout_synthetic_session_08,target_above_90C,Installed residual XGBoost (real-only),207,35.0263,1252.9688,35.3973
+heldout_synthetic_session_08,target_above_90C,Direct XGBoost (train split),207,1.2733,2.6105,1.6157
+heldout_synthetic_session_08,target_above_90C,Gradient Boosting (train split),207,1.3692,3.0846,1.7563
+heldout_synthetic_session_08,target_above_90C,Residual XGBoost (synthetic-aware train split),207,1.3253,2.7869,1.6694
+combined_real_plus_synthetic_in_sample,all,Persistence,12016,7.102,140.2235,11.8416
+combined_real_plus_synthetic_in_sample,all,Installed residual XGBoost (real-only),12016,10.7695,279.6587,16.723
+combined_real_plus_synthetic_in_sample,all,Direct XGBoost (all-data fit),12016,4.1944,46.7459,6.8371
+combined_real_plus_synthetic_in_sample,all,Gradient Boosting (all-data fit),12016,4.4861,70.2127,8.3793
+combined_real_plus_synthetic_in_sample,all,Residual XGBoost (all-data fit),12016,3.4248,30.868,5.5559
+combined_real_plus_synthetic_in_sample,target_above_90C,Persistence,2008,7.6823,220.0743,14.8349
+combined_real_plus_synthetic_in_sample,target_above_90C,Installed residual XGBoost (real-only),2008,34.2595,1202.4458,34.6763
+combined_real_plus_synthetic_in_sample,target_above_90C,Direct XGBoost (all-data fit),2008,5.4093,118.3396,10.8784
+combined_real_plus_synthetic_in_sample,target_above_90C,Gradient Boosting (all-data fit),2008,7.0001,206.1838,14.3591
+combined_real_plus_synthetic_in_sample,target_above_90C,Residual XGBoost (all-data fit),2008,4.3633,73.6027,8.5792

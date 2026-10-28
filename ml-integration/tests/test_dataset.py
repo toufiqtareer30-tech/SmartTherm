@@ -12,7 +12,13 @@ import numpy as np
 from sklearn.dummy import DummyRegressor
 from sklearn.linear_model import LinearRegression
 
-from smarttherm_ml.dataset import SensorPoint, TrainingExample, build_examples, load_points
+from smarttherm_ml.dataset import (
+    SensorPoint,
+    TrainingExample,
+    build_examples,
+    discover_csv_files,
+    load_points,
+)
 from smarttherm_ml.features import FEATURE_NAMES, compute_features
 from smarttherm_ml.training import (
     InsufficientTrainingDataError,
@@ -26,6 +32,25 @@ from smarttherm_ml.dataset import TrainingExample
 
 
 class DatasetTests(unittest.TestCase):
+    def test_experiment_csv_is_not_discovered_as_live_training_data(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            experiment_csv = (
+                root
+                / "ml-integration"
+                / "experiments"
+                / "high-temperature-stress-test"
+                / "mixed_cpu_high_temperature_stress.csv"
+            )
+            experiment_csv.parent.mkdir(parents=True)
+            experiment_csv.write_text("timestamp,cpuTemperatureC\n", encoding="utf-8")
+            real_csv = root / "telemetry_real.csv"
+            real_csv.write_text("timestamp,cpuTemperatureC\n", encoding="utf-8")
+
+            discovered = discover_csv_files(root)
+
+        self.assertEqual(discovered, [real_csv.resolve()])
+
     def test_legacy_csv_sensor_names_are_normalized_without_inventing_cpu_temp(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "telemetry_legacy.csv"

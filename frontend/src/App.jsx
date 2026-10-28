@@ -342,43 +342,53 @@ function App() {
     const createdWarnings = [];
     for (const evaluation of evaluations) {
       const forecastReady = forecastIsUsable(prediction, evaluation.forecast);
-      const currentValid = current?.sourceAvailable === true &&
-        evaluation.currentC != null &&
-        Number.isFinite(Number(evaluation.currentC));
-      const currentAbove = currentValid && Number(evaluation.currentC) >= evaluation.limit;
       const predictionAbove = forecastReady &&
         Number(evaluation.forecast.predictedC) >= evaluation.limit;
       const activeForComponent = updatedWarnings.filter(
         (warning) => warning.component === evaluation.component && warning.active,
       );
-
-      if (activeForComponent.length && currentValid && Number(evaluation.currentC) < evaluation.limit &&
-          (!forecastReady || Number(evaluation.forecast.predictedC) < evaluation.limit)) {
+      const legacyWarnings = activeForComponent.filter(
+        (warning) => warning.trigger !== "forecast",
+      );
+      if (legacyWarnings.length) {
         const resolvedAt = new Date().toISOString();
         updatedWarnings = updatedWarnings.map((warning) =>
-          warning.component === evaluation.component && warning.active
+          warning.component === evaluation.component && warning.active &&
+          warning.trigger !== "forecast"
             ? { ...warning, active: false, resolvedAt }
             : warning);
         changed = true;
       }
-      if ((!currentAbove && !predictionAbove) || activeForComponent.length) continue;
+      const activeForecastWarnings = activeForComponent.filter(
+        (warning) => warning.trigger === "forecast",
+      );
 
-      const value = currentAbove ? Number(evaluation.currentC) : Number(evaluation.forecast.predictedC);
+      if (activeForecastWarnings.length && forecastReady &&
+          Number(evaluation.forecast.predictedC) <= evaluation.limit - 2) {
+        const resolvedAt = new Date().toISOString();
+        updatedWarnings = updatedWarnings.map((warning) =>
+          warning.component === evaluation.component && warning.active &&
+          warning.trigger === "forecast"
+            ? { ...warning, active: false, resolvedAt }
+            : warning);
+        changed = true;
+      }
+      if (!predictionAbove || activeForecastWarnings.length) continue;
+
+      const value = Number(evaluation.forecast.predictedC);
       const severity = value >= evaluation.limit + 5 ? "CRITICAL" : "WARNING";
       const target = evaluation.forecast?.targetTime || prediction?.targetTime;
-      const message = currentAbove
-        ? `${evaluation.component} temperature is ${value.toFixed(1)}°C, at or above the throttle limit of ${evaluation.limit.toFixed(1)}°C.`
-        : `${evaluation.component} predicted to reach ${value.toFixed(1)}°C by ${formatTime(target)}, at or above the throttle limit of ${evaluation.limit.toFixed(1)}°C.`;
       const createdWarning = {
         id: `local-${evaluation.component}-${Date.now()}`,
         component: evaluation.component,
+        trigger: "forecast",
         severity,
         active: true,
         createdAt: new Date().toISOString(),
         currentC: evaluation.currentC ?? evaluation.forecast?.currentC ?? null,
         predictedC: forecastReady ? evaluation.forecast.predictedC : null,
         thresholdC: evaluation.limit,
-        message,
+        message: `${evaluation.component} predicted to reach ${value.toFixed(1)}°C by ${formatTime(target)}, at or above the throttle limit of ${evaluation.limit.toFixed(1)}°C.`,
         suggestedAction: "Reduce demanding workloads and check that cooling and airflow are operating normally.",
       };
       updatedWarnings.unshift(createdWarning);

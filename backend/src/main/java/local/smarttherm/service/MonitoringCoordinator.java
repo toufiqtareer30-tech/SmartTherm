@@ -38,7 +38,7 @@ public class MonitoringCoordinator {
             return;
         }
         var prediction = predictionService.predict(telemetryService.activeWindow());
-        alertService.evaluate(prediction, current, settingsService.get());
+        alertService.evaluate(prediction, settingsService.get());
         lastProcessed = current.timestamp();
     }
 }

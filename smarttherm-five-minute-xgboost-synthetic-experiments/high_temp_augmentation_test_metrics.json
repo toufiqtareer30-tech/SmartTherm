@@ -1,0 +1,67 @@
+{
+  "threshold_c": 90.0,
+  "synthetic_rows": 500,
+  "generation_method": "Nearest-neighbor interpolation between positive examples from the chronological training split only.",
+  "dataset": {
+    "eligible_examples": 3557,
+    "train": 1773,
+    "validation": 746,
+    "test": 1024,
+    "train_hot_targets": 77,
+    "synthetic_rows_added_to_fit": 500
+  },
+  "metrics": [
+    {
+      "model_variant": "Persistence baseline",
+      "correction_weight": 0.0,
+      "examples": 1024,
+      "MAE_C": 7.134765625,
+      "RMSE_C": 8.95638302413424,
+      "predicted_hot_count": 134,
+      "actual_hot_count": 136,
+      "hot_precision": 0.26865671641791045,
+      "hot_recall": 0.2647058823529412,
+      "hot_f1": 0.26666666666666666,
+      "current_ge_90_examples": 134,
+      "false_hot_when_current_ge_90": 98,
+      "true_hot_when_current_ge_90": 36,
+      "MAE_when_current_ge_90_C": 8.671641791044776,
+      "mean_signed_error_C": 0.306640625
+    },
+    {
+      "model_variant": "Real training rows only",
+      "correction_weight": 0.07,
+      "examples": 1024,
+      "MAE_C": 6.975948647921541,
+      "RMSE_C": 8.742089111220114,
+      "predicted_hot_count": 112,
+      "actual_hot_count": 136,
+      "hot_precision": 0.2857142857142857,
+      "hot_recall": 0.23529411764705882,
+      "hot_f1": 0.25806451612903225,
+      "current_ge_90_examples": 134,
+      "false_hot_when_current_ge_90": 80,
+      "true_hot_when_current_ge_90": 32,
+      "MAE_when_current_ge_90_C": 8.022373997898244,
+      "mean_signed_error_C": 0.31698458934988594
+    },
+    {
+      "model_variant": "Real + 500 synthetic hot-target rows",
+      "correction_weight": 0.05,
+      "examples": 1024,
+      "MAE_C": 7.003712137297578,
+      "RMSE_C": 8.780014456678114,
+      "predicted_hot_count": 112,
+      "actual_hot_count": 136,
+      "hot_precision": 0.2857142857142857,
+      "hot_recall": 0.23529411764705882,
+      "hot_f1": 0.25806451612903225,
+      "current_ge_90_examples": 134,
+      "false_hot_when_current_ge_90": 80,
+      "true_hot_when_current_ge_90": 32,
+      "MAE_when_current_ge_90_C": 8.212832085200091,
+      "mean_signed_error_C": 0.4208542448062986
+    }
+  ],
+  "data_note": "Synthetic examples are for this experiment only; no collector CSV, saved model, or active manifest was modified."
+}

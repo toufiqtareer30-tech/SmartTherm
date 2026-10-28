@@ -70,6 +70,7 @@ ml-integration/tests/__pycache__/
 # Generated synthetic ML artifacts
 ml-integration/synthetic-lab/artifacts/
 ml-integration/synthetic-lab/synthetic_thermal_data.csv
+ml-integration/experiments/high-temperature-stress-test/experimental_*.joblib
 
 # Local runtime profile
 smarttherm_profile.json

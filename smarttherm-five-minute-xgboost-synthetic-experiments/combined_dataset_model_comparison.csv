@@ -1,0 +1,21 @@
+evaluation_scope,subset,model,examples,mae_c,mse_c2,rmse_c
+heldout_synthetic_session_08,all,Persistence,302,4.0822,30.9948,5.5673
+heldout_synthetic_session_08,all,Installed residual XGBoost (real-only),302,4.2022,26.5781,5.1554
+heldout_synthetic_session_08,all,Direct XGBoost (train split),302,1.491,3.9828,1.9957
+heldout_synthetic_session_08,all,Gradient Boosting (train split),302,1.7819,5.3495,2.3129
+heldout_synthetic_session_08,all,Residual XGBoost (synthetic-aware train split),302,1.2091,2.7021,1.6438
+heldout_synthetic_session_08,target_above_90C,Persistence,207,2.4998,17.6879,4.2057
+heldout_synthetic_session_08,target_above_90C,Installed residual XGBoost (real-only),207,3.7207,24.7974,4.9797
+heldout_synthetic_session_08,target_above_90C,Direct XGBoost (train split),207,1.0986,2.0874,1.4448
+heldout_synthetic_session_08,target_above_90C,Gradient Boosting (train split),207,1.2709,2.4561,1.5672
+heldout_synthetic_session_08,target_above_90C,Residual XGBoost (synthetic-aware train split),207,1.0088,1.5904,1.2611
+combined_real_plus_synthetic_in_sample,all,Persistence,7181,5.4801,58.4812,7.6473
+combined_real_plus_synthetic_in_sample,all,Installed residual XGBoost (real-only),7181,5.2882,50.1731,7.0833
+combined_real_plus_synthetic_in_sample,all,Direct XGBoost (all-data fit),7181,2.5288,13.8816,3.7258
+combined_real_plus_synthetic_in_sample,all,Gradient Boosting (all-data fit),7181,3.1777,22.9087,4.7863
+combined_real_plus_synthetic_in_sample,all,Residual XGBoost (all-data fit),7181,1.8813,7.9468,2.819
+combined_real_plus_synthetic_in_sample,target_above_90C,Persistence,1838,3.4484,39.1751,6.259
+combined_real_plus_synthetic_in_sample,target_above_90C,Installed residual XGBoost (real-only),1838,4.5518,42.8187,6.5436
+combined_real_plus_synthetic_in_sample,target_above_90C,Direct XGBoost (all-data fit),1838,1.8568,12.1773,3.4896
+combined_real_plus_synthetic_in_sample,target_above_90C,Gradient Boosting (all-data fit),1838,2.3879,22.88,4.7833
+combined_real_plus_synthetic_in_sample,target_above_90C,Residual XGBoost (all-data fit),1838,1.4151,6.285,2.507

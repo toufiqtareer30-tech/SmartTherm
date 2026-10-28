@@ -42,6 +42,25 @@ The assessor reports usable five-minute pairs and eligible chronological train, 
 
 ## Train and evaluate
 
+### High-temperature synthetic stress experiment
+
+The reproducible mixed-temperature XGBoost experiment is isolated under
+`experiments\high-temperature-stress-test\`. Run it from the project root after
+the active five-minute CPU model has been promoted:
+
+```powershell
+& .\ml-integration\.venv\Scripts\python.exe .\ml-integration\experiments\high-temperature-stress-test\run_high_temperature_stress_test.py
+```
+
+The runner reads the validated CPU model from `models-five-minute` (or
+`SMARTTHERM_MODEL_DIR`), generates its deterministic synthetic stress CSV, and
+writes the JSON report and model-comparison tables alongside the runner. Its
+experimental augmented fit is stored only in that experiment folder, is not
+registered, and is never loaded by live inference. Synthetic readings are
+excluded from automatic training discovery; all synthetic scores describe
+generated workloads, not real-hardware accuracy. The report distinguishes the
+held-out synthetic-session scores from optimistic in-sample fit metrics.
+
 ### Synthetic development data (not live model data)
 
 The legacy synthetic development generator remains available only for isolated software experiments:

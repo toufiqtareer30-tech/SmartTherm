@@ -1,0 +1,9 @@
+# SmartTherm five-minute XGBoost and synthetic experiment package
+
+This bundle contains reference snapshots of the five-minute prediction integration and the offline synthetic high-temperature experiments. The integration uses a five-minute horizon, residual XGBoost and validation correction. Review and merge the relevant changes into your project version instead of blindly replacing whole folders; APIs and surrounding code may differ.
+
+The synthetic experiment adds a mixed-temperature CPU stress set (4,332 rows: 1,762 readings above 90°C and 2,570 at or below 90°C), compares Persistence, the installed real-only residual XGBoost, Direct XGBoost, Gradient Boosting, and synthetic-aware Residual XGBoost, and stores experiment reports and the experimental all-data fit under `ml-integration/experiments/`.
+
+Synthetic rows are not sensor observations. The high-temperature synthetic session is held out for the session test. Scores on the full combined dataset are in-sample and optimistic; they are included for description, not as unbiased model performance. The experimental fit is not the deployed model and synthetic data is excluded from automatic live trainer discovery.
+
+The production trained model and raw telemetry are not included. Joblib model artifacts may depend on compatible Python and library versions. See the comparison CSV/Markdown and JSON report in the stress-test folder for details.
